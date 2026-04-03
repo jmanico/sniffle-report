@@ -1,41 +1,51 @@
-import './App.css'
+import { lazy, Suspense } from 'react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
-const statusCards = [
-  {
-    label: 'Frontend',
-    value: 'Vite + React + TypeScript initialized',
-  },
-  {
-    label: 'API Target',
-    value: 'http://localhost:5000/api/v1',
-  },
-  {
-    label: 'Next Focus',
-    value: 'Region-driven public health dashboard',
-  },
-]
+import './App.css'
+import { AppShell } from './components/layout/AppShell'
+import { RegionProvider } from './components/region/RegionContext'
+import { AlertDetailPage } from './pages/AlertDetailPage'
+import { AlertsPage } from './pages/AlertsPage'
+import { HomePage } from './pages/HomePage'
+import { NewsPage } from './pages/NewsPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { PreventionPage } from './pages/PreventionPage'
+import { RegionalDashboardPage } from './pages/RegionalDashboardPage'
+import { ResourcesPage } from './pages/ResourcesPage'
+
+const AdminRoutes = lazy(() => import('./admin/AdminRoutes'))
 
 function App() {
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <span className="eyebrow">Sniffle Report</span>
-        <h1>Regional health reporting, not a generic starter app.</h1>
-        <p>
-          This frontend is scaffolded for a region-scoped public health product:
-          local alerts, trend views, prevention guidance, and admin-managed
-          editorial workflows.
-        </p>
-        <div className="status-grid">
-          {statusCards.map((card) => (
-            <article className="status-card" key={card.label}>
-              <strong>{card.label}</strong>
-              <span>{card.value}</span>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/region/:regionId"
+          element={
+            <RegionProvider>
+              <AppShell />
+            </RegionProvider>
+          }
+        >
+          <Route index element={<RegionalDashboardPage />} />
+          <Route path="alerts" element={<AlertsPage />} />
+          <Route path="alerts/:alertId" element={<AlertDetailPage />} />
+          <Route path="prevention" element={<PreventionPage />} />
+          <Route path="resources" element={<ResourcesPage />} />
+          <Route path="news" element={<NewsPage />} />
+        </Route>
+        <Route
+          path="/admin/*"
+          element={
+            <Suspense fallback={<div className="route-loading">Loading admin interface…</div>}>
+              <AdminRoutes />
+            </Suspense>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 
