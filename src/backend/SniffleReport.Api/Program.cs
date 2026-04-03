@@ -15,6 +15,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    await DevelopmentDataSeeder.SeedAsync(app.Services, app.Logger, app.Lifetime.ApplicationStopping);
+}
+
 app.UseExceptionHandler();
 
 app.MapGet("/", () => Results.Ok(new
