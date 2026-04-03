@@ -4,12 +4,12 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-  it('renders the Sniffle Report heading', () => {
+  it('renders the landing page headline', () => {
     render(<App />)
 
     expect(
       screen.getByRole('heading', {
-        name: /regional health reporting, not a generic starter app/i,
+        name: /regional health intelligence shaped by the place you actually live in/i,
       }),
     ).toBeInTheDocument()
   })
