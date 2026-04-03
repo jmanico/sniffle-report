@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
     options.UseNpgsql(connectionString);
 });
+builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<RegionService>();
 
 var app = builder.Build();
