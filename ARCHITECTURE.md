@@ -148,11 +148,18 @@ src/backend/
 
 - Admin users are stored in the Identity database tables
 - Login endpoint issues a short-lived JWT (15 min) + refresh token (7 days)
-- Admin endpoints require `[Authorize(Roles = "Admin")]`
+- **Access tokens (JWT)** are stored in JavaScript memory only — never `localStorage` or `sessionStorage`
+- **Refresh tokens** are delivered via `HttpOnly`, `Secure`, `SameSite=Strict` cookies — never accessible to JavaScript. The refresh endpoint reads the cookie server-side and issues a new JWT.
+- **MFA required for all admin accounts** — TOTP-based (e.g., ASP.NET Core Identity + authenticator app). No SMS-based MFA. MFA enrollment enforced on first admin login.
+- Two admin roles:
+  - `Admin` — content CRUD (alerts, prevention guides, resources, news, fact-checks)
+  - `SuperAdmin` — Admin account management, role assignment, audit log access, system configuration
+- Admin endpoints require `[Authorize(Roles = "Admin")]` minimum; account management endpoints require `[Authorize(Roles = "SuperAdmin")]`
 - Public endpoints are anonymous — no auth required to read health data
+- Admin routes return `404` (not `401`/`403`) to unauthenticated users — do not reveal admin surface existence
 - Phase 2: API keys for mobile clients (issued per-device, rate-limited separately)
 
-**Why JWT over cookies:** The frontend is a separate SPA origin, and JWT avoids CSRF complexity. Tokens are stored in memory (not localStorage) on the frontend and refreshed silently.
+**Why JWT over cookies for access tokens:** The frontend is a separate SPA origin, and JWT avoids CSRF complexity for API requests. The refresh token uses a cookie to prevent XSS-based theft — the access token's short lifespan (15 min) limits the damage window if exfiltrated from memory.
 
 ### Database
 
@@ -258,6 +265,74 @@ Regions form a tree: State → County → Zip/Metro. The `ParentId` self-referen
 - A user selecting "Travis County" sees all alerts for Travis County AND its child zip codes
 - State-level rollup views that aggregate child region data
 - Admin can publish an alert at any level in the hierarchy
+
+### Audit Log
+
+All admin write operations are recorded in an immutable, append-only audit log:
+
+```
+┌──────────────────────┐
+│     AuditLogEntry    │
+├──────────────────────┤
+│ Id (PK)              │
+│ AdminId (FK → User)  │
+│ Action (enum)        │  Create | Update | Delete | StatusChange | RoleChange | Login | FailedLogin
+│ EntityType (string)  │  "HealthAlert", "FactCheck", "NewsItem", etc.
+│ EntityId (Guid)      │
+│ Timestamp (UTC)      │
+│ BeforeJson (jsonb)   │  Snapshot of entity state before the change (null for Create)
+│ AfterJson (jsonb)    │  Snapshot of entity state after the change (null for Delete)
+│ IpAddress (string)   │
+│ UserAgent (string)   │
+│ Justification (text) │  Required for verdict changes and deletions
+└──────────────────────┘
+```
+
+**Rules:**
+- Audit log table has no `UPDATE` or `DELETE` permissions for application accounts — append-only at the DB level
+- Audit log entries are written in the same transaction as the mutation they record
+- SuperAdmin-only endpoint to query/export audit logs; no API to modify or delete entries
+- Retention: minimum 2 years for health data integrity compliance
+
+### Soft Deletes & Content Versioning
+
+All health content entities (`HealthAlert`, `PreventionGuide`, `NewsItem`, `FactCheck`) use soft deletes:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `IsDeleted` | bool | Filters entity from public queries |
+| `DeletedAt` | DateTime? | When the soft delete occurred |
+| `DeletedBy` | Guid? | Admin who performed the deletion |
+
+Hard deletes require `SuperAdmin` role, produce an audit log entry, and are only permitted after the soft-delete retention period (90 days minimum).
+
+`FactCheck` records additionally track verdict history — every status change appends to a `FactCheckHistory` table:
+
+```
+┌──────────────────────┐
+│  FactCheckHistory    │
+├──────────────────────┤
+│ Id (PK)              │
+│ FactCheckId (FK)     │
+│ PreviousStatus       │
+│ NewStatus            │
+│ ChangedBy (FK→User)  │
+│ ChangedAt (UTC)      │
+│ Justification (text) │
+│ Sources (jsonb)      │  Snapshot of sources at time of change
+└──────────────────────┘
+```
+
+### PII Classification
+
+The following fields are classified as PII and **must** be redacted in logs:
+
+| Category | Fields | Log Treatment |
+|----------|--------|---------------|
+| Admin identity | Email, full name | Hash or redact — log admin ID only |
+| Network | IP address | Allowed in auth event logs only; redacted elsewhere |
+| Auth | Passwords, tokens, MFA codes | Never logged under any circumstance |
+| User-submitted | Form inputs, search queries | Redacted unless explicitly needed for debugging (and then only at Debug level, disabled in production) |
 
 ---
 
@@ -481,9 +556,9 @@ All code in this project follows mandatory secure coding standards:
 | A03 Injection | EF Core parameterized queries exclusively; no raw SQL. React JSX auto-escapes output. Never use `dangerouslySetInnerHTML` — use safe rendering libraries (e.g., react-markdown). Zod schema validation on all API responses before rendering in the frontend. |
 | A04 Insecure Design | Region-scoped data model prevents accidental data leakage across regions; admin and public APIs are separate controller groups. Never bind to entity/domain models — always use dedicated DTOs. Never return entity objects — project to DTOs with `Select()`. |
 | A05 Security Misconfiguration | CORS with `WithOrigins()` specific origins only — never `SetIsOriginAllowed(_ => true)`. Development secrets via user-secrets (not appsettings). Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`. Remove server headers: `AddServerHeader = false`. |
-| A06 Vulnerable Components | Dependabot enabled; `dotnet list package --vulnerable --include-transitive` in CI; `npm audit` in CI. Minimize frontend dependencies — prefer native platform or React features first. |
-| A07 Auth Failures | Short-lived JWTs (15 min); refresh token rotation with reuse detection; account lockout after 5 failed attempts. Stricter rate limits on auth endpoints. |
-| A08 Data Integrity Failures | Fact-check sources include URL, access date, and admin attribution — audit trail for editorial decisions. `System.Text.Json` exclusively — never `BinaryFormatter`, `NetDataContractSerializer`, or `Newtonsoft.Json` with `TypeNameHandling`. |
+| A06 Vulnerable Components | Dependabot enabled; `dotnet list package --vulnerable --include-transitive` in CI; `npm audit` in CI. Minimize frontend dependencies — prefer native platform or React features first. CI uses `npm ci` (not `npm install`) to enforce lockfile integrity. Pin NuGet package versions explicitly. |
+| A07 Auth Failures | Short-lived JWTs (15 min); refresh tokens via `HttpOnly`/`Secure`/`SameSite=Strict` cookies with rotation and reuse detection; account lockout after 5 failed attempts; TOTP-based MFA required for all admin accounts. Stricter rate limits on auth endpoints. |
+| A08 Data Integrity Failures | Fact-check sources include URL, access date, and admin attribution — audit trail for editorial decisions. Immutable audit log for all admin mutations (see Section 3). Soft deletes with content versioning on health data entities. `System.Text.Json` exclusively — never `BinaryFormatter`, `NetDataContractSerializer`, or `Newtonsoft.Json` with `TypeNameHandling`. |
 | A09 Logging Failures | Serilog structured logging with PII redaction; never string-interpolate log templates. Auth events (login, failed login, token refresh) logged at Information level. |
 | A10 SSRF | No user-supplied URLs fetched server-side in Phase 1; Phase 2 RSS ingestion will use an allowlist of domains. |
 
@@ -513,6 +588,11 @@ All code in this project follows mandatory secure coding standards:
 - **Request size limits**: `KestrelServerOptions.Limits.MaxRequestBodySize` with per-action `[RequestSizeLimit]`
 - **Pagination**: enforce max page size with `Math.Clamp()`; allow-list sort/filter fields
 - **Secrets**: load from vault services via `IOptions<T>`, never from source code
+- **ReDoS prevention**: use `RegexOptions.NonBacktracking` (.NET 7+) for any regex evaluated against user input; set `Regex` match timeout
+- **Query timeouts**: EF Core `CommandTimeout` set explicitly; trend aggregation queries enforce max date range (1 year) to prevent expensive scans
+- **Full-text search hardening**: max query length (200 chars); search endpoints rate-limited more aggressively than read endpoints; validate search input for FTS injection
+- **Audit logging**: all admin mutations written to append-only audit log in the same transaction (see Section 3)
+- **Soft deletes**: health content entities use `IsDeleted`/`DeletedAt`/`DeletedBy`; hard deletes require SuperAdmin role
 
 ### Additional Security Controls
 

@@ -71,19 +71,33 @@ All code must follow these mandatory secure coding prompts from Manicode.ai:
 - **React frontend**: Follow `/prompts/code security/Client Side Frameworks/ReactJS/00 React19 Secure Generator (JS).md` — Zod validation on API responses, `validateAndSanitizeUrl` on all URLs, no `dangerouslySetInnerHTML`, CSP-compatible, explicit prop destructuring
 - **ASP.NET Core backend**: Follow `/prompts/code security/Backend Frameworks/DotNet/01 Secure C# ASP.NET Core API Developer.md` — fallback deny-all authorization, dedicated DTOs (never bind/return entities), FluentValidation, rate limiting, ProblemDetails for errors, structured logging with PII redaction
 
-See ARCHITECTURE.md Section 7 for the full security architecture.
+See ARCHITECTURE.md Section 7 for the full security architecture and threat model (issue #4).
+
+### Security Rules (Non-Negotiable)
+
+- **Audit logging**: every admin write operation (create, update, delete, status change) must produce an `AuditLogEntry` in the same database transaction. No exceptions.
+- **Soft deletes**: health content entities (alerts, news, fact-checks, prevention guides) use `IsDeleted`/`DeletedAt`/`DeletedBy` — never hard delete without SuperAdmin role
+- **Refresh tokens in HttpOnly cookies** — never in JS memory, localStorage, or sessionStorage
+- **MFA required** for all admin accounts (TOTP-based)
+- **Two admin roles**: `Admin` (content CRUD) and `SuperAdmin` (account management, audit access, hard deletes)
+- **ReDoS prevention**: `RegexOptions.NonBacktracking` on any regex evaluated against user input
+- **Query limits**: trend endpoints enforce max date range (1 year); search endpoints enforce max query length (200 chars)
+- **PII redaction**: admin emails, passwords, tokens, MFA codes never appear in logs. See ARCHITECTURE.md Section 3 for full PII classification.
 
 ## Development Guidelines
 
 - All health data endpoints must be region-scoped — never return unfiltered national data as a default
-- Admin/content-management endpoints require authorization; public read endpoints do not
+- Admin/content-management endpoints require `[Authorize(Roles = "Admin")]`; public read endpoints are `[AllowAnonymous]`
+- Admin routes return 404 (not 401/403) to unauthenticated users
 - Fact-check status is a first-class field on health news items, not an afterthought
+- Fact-check verdict changes require justification and produce a `FactCheckHistory` entry
 - Disease case counts and trend data must include source attribution (which health department, date of data)
 - Cost/access info for vaccines and preventive care must distinguish between free, insured, and out-of-pocket pricing
 - Local resource data (clinics, pharmacies) needs geocoding for regional filtering
 - Input validation on all API boundaries; output encoding on all rendered content (XSS prevention)
 - Use parameterized queries / EF Core — no raw SQL string concatenation
 - CORS configured explicitly for the frontend origin only
+- CI uses `npm ci` (not `npm install`) to enforce lockfile integrity
 
 ## Phase 2 Considerations
 

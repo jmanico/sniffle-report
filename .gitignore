@@ -1,0 +1,45 @@
+# Build outputs
+bin/
+obj/
+dist/
+node_modules/
+build/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and credentials — NEVER commit these
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+*.key
+*.pem
+*.p12
+.env
+.env.*
+!.env.example
+secrets.json
+credentials.json
+
+# User secrets (dotnet)
+secrets/
+
+# Logs
+*.log
+logs/
+
+# Test results
+TestResults/
+coverage/
+
+# Docker local overrides
+docker-compose.override.yml
