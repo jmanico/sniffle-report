@@ -64,6 +64,15 @@ cd src/frontend && npm test -- --run TestFile.test.ts  # single test file
 docker-compose up
 ```
 
+## Secure Coding Standards
+
+All code must follow these mandatory secure coding prompts from Manicode.ai:
+
+- **React frontend**: Follow `/prompts/code security/Client Side Frameworks/ReactJS/00 React19 Secure Generator (JS).md` — Zod validation on API responses, `validateAndSanitizeUrl` on all URLs, no `dangerouslySetInnerHTML`, CSP-compatible, explicit prop destructuring
+- **ASP.NET Core backend**: Follow `/prompts/code security/Backend Frameworks/DotNet/01 Secure C# ASP.NET Core API Developer.md` — fallback deny-all authorization, dedicated DTOs (never bind/return entities), FluentValidation, rate limiting, ProblemDetails for errors, structured logging with PII redaction
+
+See ARCHITECTURE.md Section 7 for the full security architecture.
+
 ## Development Guidelines
 
 - All health data endpoints must be region-scoped — never return unfiltered national data as a default
