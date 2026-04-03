@@ -18,6 +18,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<RegionService>();
+builder.Services.AddScoped<ResourceService>();
 
 var app = builder.Build();
 
