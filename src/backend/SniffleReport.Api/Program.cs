@@ -14,11 +14,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         ?? builder.Configuration["ConnectionStrings__Default"]
         ?? "Host=localhost;Database=snifflereport;Username=sniffle;Password=localdev";
 
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.CommandTimeout(30);
+    });
 });
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<PreventionService>();
 builder.Services.AddScoped<RegionService>();
+builder.Services.AddScoped<TrendService>();
 
 var app = builder.Build();
 
