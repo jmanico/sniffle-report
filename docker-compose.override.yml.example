@@ -1,0 +1,19 @@
+services:
+  db:
+    ports: !override
+      - "5433:5432"
+
+  api:
+    ports: !override
+      - "5001:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+
+  frontend:
+    ports: !override
+      - "5174:5173"
+    build:
+      args:
+        VITE_API_URL: http://localhost:5001/api/v1
+    environment:
+      VITE_API_URL: http://localhost:5001/api/v1
