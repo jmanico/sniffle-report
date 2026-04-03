@@ -1,9 +1,13 @@
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SniffleReport.Api.Data;
+using SniffleReport.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Default")
@@ -12,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
     options.UseNpgsql(connectionString);
 });
+builder.Services.AddScoped<RegionService>();
 
 var app = builder.Build();
 
@@ -22,6 +27,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 
+app.MapControllers();
 app.MapGet("/", () => Results.Ok(new
 {
     Name = "Sniffle Report API",
@@ -29,3 +35,5 @@ app.MapGet("/", () => Results.Ok(new
 }));
 
 app.Run();
+
+public partial class Program;
