@@ -6,7 +6,7 @@ RUN dotnet restore SniffleReport.Api/SniffleReport.Api.csproj
 
 FROM restore AS build
 COPY . .
-RUN dotnet build SniffleReport.Api/SniffleReport.Api.csproj -c Release --no-restore
+RUN dotnet build SniffleReport.Api/SniffleReport.Api.csproj -c Release
 
 FROM build AS publish
 RUN dotnet publish SniffleReport.Api/SniffleReport.Api.csproj -c Release --no-build -o /app/publish /p:UseAppHost=false
