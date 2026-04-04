@@ -1,13 +1,5 @@
-import { Link } from 'react-router-dom'
-
-import { validateAndSanitizeUrl } from '../../utils/validateAndSanitizeUrl'
 import { useRegion } from '../../hooks/useRegion'
-
-const regionOptions = [
-  { id: 'travis-county-tx', label: 'Travis County, TX' },
-  { id: 'cook-county-il', label: 'Cook County, IL' },
-  { id: 'king-county-wa', label: 'King County, WA' },
-]
+import { RegionSearchPanel } from './RegionSearchPanel'
 
 export function RegionSelector() {
   const { regionId, regionLabel } = useRegion()
@@ -16,20 +8,13 @@ export function RegionSelector() {
     <details className="region-picker">
       <summary className="region-picker__summary">Region</summary>
       <div className="region-picker__panel">
-        <div className="region-picker__title">Current region</div>
-        <strong>{regionLabel}</strong>
-        <span className="region-picker__value">URL key: {regionId}</span>
-        <div className="region-picker__list" role="list">
-          {regionOptions.map((region) => (
-            <Link
-              className="region-picker__link"
-              key={region.id}
-              to={validateAndSanitizeUrl(`/region/${region.id}`)}
-            >
-              {region.label}
-            </Link>
-          ))}
-        </div>
+        <RegionSearchPanel
+          className="region-search region-search--header"
+          currentRegionId={regionId}
+          currentRegionLabel={regionLabel}
+          description="Switch to another region from anywhere in the app."
+          heading="Current region"
+        />
       </div>
     </details>
   )

@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 
+import { PwaStatusBanner } from '../components/layout/PwaStatusBanner'
+import { RegionSearchPanel } from '../components/region/RegionSearchPanel'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
 const spotlightCards = [
@@ -24,23 +26,25 @@ export function HomePage() {
         <span className="section-kicker">Public health, scoped correctly</span>
         <h1>Regional health intelligence shaped by the place you actually live in.</h1>
         <p>
-          The app shell is now organized around shareable region URLs, a common
-          layout, and route placeholders for every public and admin surface in
-          the architecture. The next frontend steps wire these views to the API
-          and fill them with real data.
+          Start by selecting a real region from the backend dataset. Search is
+          debounced, region routes are shareable, and the selected region
+          becomes the scope for every public health view in the app.
         </p>
         <div className="landing-links">
-          <Link
-            className="landing-link landing-link--primary"
-            to={validateAndSanitizeUrl('/region/travis-county-tx')}
-          >
-            Open a demo region
-          </Link>
           <Link className="landing-link" to={validateAndSanitizeUrl('/admin')}>
             Admin entry
           </Link>
         </div>
       </section>
+
+      <PwaStatusBanner />
+
+      <RegionSearchPanel
+        className="region-search region-search--landing"
+        description="Search counties, metros, ZIP regions, and states, then jump directly into that dashboard."
+        heading="Choose a region"
+        inputLabel="Find your region"
+      />
 
       <section className="spotlight-grid" aria-label="Application shell highlights">
         {spotlightCards.map((card) => (

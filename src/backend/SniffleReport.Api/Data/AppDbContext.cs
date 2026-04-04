@@ -26,6 +26,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<Region> Regions => Set<Region>();
 
+    public DbSet<FeedSource> FeedSources => Set<FeedSource>();
+
+    public DbSet<FeedSyncLog> FeedSyncLogs => Set<FeedSyncLog>();
+
+    public DbSet<IngestedRecord> IngestedRecords => Set<IngestedRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -40,6 +46,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureFactCheck(modelBuilder);
         ConfigureFactCheckHistory(modelBuilder);
         ConfigureAuditLogEntry(modelBuilder);
+        ConfigureFeedSource(modelBuilder);
+        ConfigureFeedSyncLog(modelBuilder);
+        ConfigureIngestedRecord(modelBuilder);
     }
 
     private static void ConfigureRegion(ModelBuilder modelBuilder)
@@ -173,5 +182,44 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         entity.Property(x => x.IpAddress).HasMaxLength(64);
         entity.Property(x => x.UserAgent).HasMaxLength(512);
         entity.Property(x => x.Justification).HasMaxLength(2_000);
+    }
+
+    private static void ConfigureFeedSource(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FeedSource>();
+
+        entity.ToTable("FeedSources");
+        entity.Property(x => x.Name).HasMaxLength(200);
+        entity.Property(x => x.Type).HasConversion<string>().HasMaxLength(32);
+        entity.Property(x => x.Url).HasMaxLength(1_000);
+        entity.Property(x => x.SoqlQuery).HasMaxLength(2_000);
+        entity.Property(x => x.LastSyncStatus).HasConversion<string>().HasMaxLength(32);
+        entity.Property(x => x.LastSyncError).HasMaxLength(2_000);
+        entity.HasIndex(x => new { x.IsEnabled, x.LastSyncStartedAt })
+            .HasDatabaseName("IX_FeedSource_IsEnabled_LastSyncStartedAt");
+    }
+
+    private static void ConfigureFeedSyncLog(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<FeedSyncLog>();
+
+        entity.ToTable("FeedSyncLogs");
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        entity.Property(x => x.ErrorMessage).HasMaxLength(4_000);
+        entity.HasIndex(x => new { x.FeedSourceId, x.StartedAt })
+            .HasDatabaseName("IX_FeedSyncLog_FeedSourceId_StartedAt");
+    }
+
+    private static void ConfigureIngestedRecord(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<IngestedRecord>();
+
+        entity.ToTable("IngestedRecords");
+        entity.Property(x => x.ExternalSourceId).HasMaxLength(500);
+        entity.Property(x => x.PayloadHash).HasMaxLength(64);
+        entity.Property(x => x.TargetEntityType).HasMaxLength(128);
+        entity.HasIndex(x => new { x.FeedSourceId, x.ExternalSourceId })
+            .IsUnique()
+            .HasDatabaseName("IX_IngestedRecord_FeedSourceId_ExternalSourceId");
     }
 }

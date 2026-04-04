@@ -28,5 +28,9 @@ public sealed class HealthAlert : SoftDeletableEntityBase
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public Guid? IngestedRecordId { get; set; }
+
+    public IngestedRecord? IngestedRecord { get; set; }
+
     public ICollection<DiseaseTrend> DiseaseTrends { get; set; } = [];
 }

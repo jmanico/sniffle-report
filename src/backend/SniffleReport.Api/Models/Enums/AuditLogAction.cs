@@ -8,5 +8,6 @@ public enum AuditLogAction
     StatusChange = 3,
     RoleChange = 4,
     Login = 5,
-    FailedLogin = 6
+    FailedLogin = 6,
+    FeedIngest = 7
 }

@@ -119,6 +119,9 @@ namespace SniffleReport.Api.Data.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("IngestedRecordId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -132,6 +135,8 @@ namespace SniffleReport.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IngestedRecordId");
 
                     b.HasIndex("AlertId", "Date")
                         .HasDatabaseName("IX_DiseaseTrend_AlertId_Date");
@@ -224,6 +229,122 @@ namespace SniffleReport.Api.Data.Migrations
                     b.ToTable("FactCheckHistories", (string)null);
                 });
 
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.FeedSource", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ConsecutiveFailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastSyncCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastSyncError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("LastSyncStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastSyncStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<TimeSpan>("PollingInterval")
+                        .HasColumnType("interval");
+
+                    b.Property<string>("SoqlQuery")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsEnabled", "LastSyncStartedAt")
+                        .HasDatabaseName("IX_FeedSource_IsEnabled_LastSyncStartedAt");
+
+                    b.ToTable("FeedSources", (string)null);
+                });
+
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.FeedSyncLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AlertsPromoted")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("ErrorStackTrace")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("FeedSourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("RecordsCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsFetched")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsSkippedDuplicate")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsSkippedUnmappable")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecordsUpdated")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeedSourceId", "StartedAt")
+                        .HasDatabaseName("IX_FeedSyncLog_FeedSourceId_StartedAt");
+
+                    b.ToTable("FeedSyncLogs", (string)null);
+                });
+
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.HealthAlert", b =>
                 {
                     b.Property<Guid>("Id")
@@ -246,6 +367,9 @@ namespace SniffleReport.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
+
+                    b.Property<Guid?>("IngestedRecordId")
+                        .HasColumnType("uuid");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -286,10 +410,57 @@ namespace SniffleReport.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("IngestedRecordId");
+
                     b.HasIndex("RegionId", "CreatedAt")
                         .HasDatabaseName("IX_HealthAlert_RegionId_CreatedAt");
 
                     b.ToTable("HealthAlerts", (string)null);
+                });
+
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.IngestedRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ExternalSourceId")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("FeedSourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("FirstIngestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("IngestCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("LastIngestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("TargetEntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TargetEntityType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeedSourceId", "ExternalSourceId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_IngestedRecord_FeedSourceId_ExternalSourceId");
+
+                    b.ToTable("IngestedRecords", (string)null);
                 });
 
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.LocalResource", b =>
@@ -370,6 +541,9 @@ namespace SniffleReport.Api.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<Guid?>("IngestedRecordId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -385,6 +559,8 @@ namespace SniffleReport.Api.Data.Migrations
                         .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IngestedRecordId");
 
                     b.HasIndex("RegionId", "PublishedAt")
                         .HasDatabaseName("IX_NewsItem_RegionId_PublishedAt");
@@ -490,7 +666,13 @@ namespace SniffleReport.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SniffleReport.Api.Models.Entities.IngestedRecord", "IngestedRecord")
+                        .WithMany()
+                        .HasForeignKey("IngestedRecordId");
+
                     b.Navigation("Alert");
+
+                    b.Navigation("IngestedRecord");
                 });
 
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.FactCheck", b =>
@@ -515,15 +697,43 @@ namespace SniffleReport.Api.Data.Migrations
                     b.Navigation("FactCheck");
                 });
 
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.FeedSyncLog", b =>
+                {
+                    b.HasOne("SniffleReport.Api.Models.Entities.FeedSource", "FeedSource")
+                        .WithMany("SyncLogs")
+                        .HasForeignKey("FeedSourceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FeedSource");
+                });
+
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.HealthAlert", b =>
                 {
+                    b.HasOne("SniffleReport.Api.Models.Entities.IngestedRecord", "IngestedRecord")
+                        .WithMany()
+                        .HasForeignKey("IngestedRecordId");
+
                     b.HasOne("SniffleReport.Api.Models.Entities.Region", "Region")
                         .WithMany("HealthAlerts")
                         .HasForeignKey("RegionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("IngestedRecord");
+
                     b.Navigation("Region");
+                });
+
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.IngestedRecord", b =>
+                {
+                    b.HasOne("SniffleReport.Api.Models.Entities.FeedSource", "FeedSource")
+                        .WithMany("IngestedRecords")
+                        .HasForeignKey("FeedSourceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FeedSource");
                 });
 
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.LocalResource", b =>
@@ -539,11 +749,17 @@ namespace SniffleReport.Api.Data.Migrations
 
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.NewsItem", b =>
                 {
+                    b.HasOne("SniffleReport.Api.Models.Entities.IngestedRecord", "IngestedRecord")
+                        .WithMany()
+                        .HasForeignKey("IngestedRecordId");
+
                     b.HasOne("SniffleReport.Api.Models.Entities.Region", "Region")
                         .WithMany("NewsItems")
                         .HasForeignKey("RegionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("IngestedRecord");
 
                     b.Navigation("Region");
                 });
@@ -572,6 +788,13 @@ namespace SniffleReport.Api.Data.Migrations
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.FactCheck", b =>
                 {
                     b.Navigation("HistoryEntries");
+                });
+
+            modelBuilder.Entity("SniffleReport.Api.Models.Entities.FeedSource", b =>
+                {
+                    b.Navigation("IngestedRecords");
+
+                    b.Navigation("SyncLogs");
                 });
 
             modelBuilder.Entity("SniffleReport.Api.Models.Entities.HealthAlert", b =>

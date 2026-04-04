@@ -1,0 +1,23 @@
+{
+  "name": "Sniffle Report",
+  "short_name": "Sniffle",
+  "description": "Regional health alerts, prevention guidance, and local care resources.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f3e8",
+  "theme_color": "#be5b2a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

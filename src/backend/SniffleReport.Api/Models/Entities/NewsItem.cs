@@ -16,5 +16,9 @@ public sealed class NewsItem : SoftDeletableEntityBase
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    public Guid? IngestedRecordId { get; set; }
+
+    public IngestedRecord? IngestedRecord { get; set; }
+
     public FactCheck? FactCheck { get; set; }
 }

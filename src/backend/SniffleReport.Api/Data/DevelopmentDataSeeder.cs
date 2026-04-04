@@ -20,6 +20,7 @@ public static class DevelopmentDataSeeder
         await SeedDiseaseTrendsAsync(context, cancellationToken);
         await SeedPreventionGuidesAsync(context, cancellationToken);
         await SeedLocalResourcesAsync(context, cancellationToken);
+        await SeedFeedSourcesAsync(context, cancellationToken);
 
         logger.LogInformation("Development seed completed for Sniffle Report.");
     }
@@ -227,6 +228,71 @@ public static class DevelopmentDataSeeder
         existing.ParentId = parentId;
         existing.Latitude = latitude;
         existing.Longitude = longitude;
+    }
+
+    private static async Task SeedFeedSourcesAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        foreach (var seed in GetFeedSourceSeeds())
+        {
+            var existing = await context.FeedSources
+                .SingleOrDefaultAsync(f => f.Name == seed.Name, cancellationToken);
+
+            if (existing is null)
+            {
+                context.FeedSources.Add(seed);
+                continue;
+            }
+
+            seed.Id = existing.Id;
+            context.Entry(existing).CurrentValues.SetValues(seed);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static IEnumerable<FeedSource> GetFeedSourceSeeds()
+    {
+        return
+        [
+            new FeedSource
+            {
+                Name = "CDC Wastewater Surveillance",
+                Type = FeedSourceType.CdcSocrata,
+                Url = "g653-nhgq",
+                SoqlQuery = "SELECT reporting_jurisdiction, date, pathogen_name, ptc_15d WHERE date > '2026-01-01' LIMIT 5000",
+                PollingInterval = TimeSpan.FromHours(6),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "CDC NNDSS Weekly Tables",
+                Type = FeedSourceType.CdcSocrata,
+                Url = "x9gk-5huc",
+                SoqlQuery = "SELECT reporting_area, mmwr_year, mmwr_week, label, m1 WHERE mmwr_year = 2026 LIMIT 5000",
+                PollingInterval = TimeSpan.FromHours(24),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "CDC MMWR Reports",
+                Type = FeedSourceType.CdcRss,
+                Url = "https://tools.cdc.gov/api/v2/resources/media/316422.rss",
+                PollingInterval = TimeSpan.FromHours(12),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "CDC Travel Health Notices",
+                Type = FeedSourceType.CdcRss,
+                Url = "https://tools.cdc.gov/api/v2/resources/media/285676.rss",
+                PollingInterval = TimeSpan.FromHours(12),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            }
+        ];
     }
 
     private static IEnumerable<HealthAlert> GetAlertSeeds(IReadOnlyDictionary<string, Region> regions)
