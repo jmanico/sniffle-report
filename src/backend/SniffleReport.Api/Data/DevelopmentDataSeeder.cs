@@ -27,6 +27,17 @@ public static class DevelopmentDataSeeder
 
     private static async Task SeedRegionsAsync(AppDbContext context, CancellationToken cancellationToken)
     {
+        // National-level region for feeds with no jurisdiction (RSS, national data)
+        await UpsertRegionAsync(
+            context,
+            name: "United States",
+            type: RegionType.State,
+            state: "US",
+            parentId: null,
+            latitude: 39.8283,
+            longitude: -98.5795,
+            cancellationToken);
+
         foreach (var state in GetStates())
         {
             await UpsertRegionAsync(
@@ -258,10 +269,11 @@ public static class DevelopmentDataSeeder
             {
                 Name = "CDC Wastewater Surveillance",
                 Type = FeedSourceType.CdcSocrata,
-                Url = "g653-nhgq",
-                SoqlQuery = "SELECT reporting_jurisdiction, date, pathogen_name, ptc_15d WHERE date > '2026-01-01' LIMIT 5000",
+                Url = "2ew6-ywp6",
+                SoqlQuery = "SELECT reporting_jurisdiction, date_end, ptc_15d, percentile, county_names, county_fips, population_served WHERE date_end > '2025-01-01' ORDER BY date_end DESC LIMIT 5000",
                 PollingInterval = TimeSpan.FromHours(6),
                 IsEnabled = true,
+                AutoPublish = true,
                 LastSyncStatus = FeedSyncStatus.NeverRun
             },
             new FeedSource
@@ -269,14 +281,15 @@ public static class DevelopmentDataSeeder
                 Name = "CDC NNDSS Weekly Tables",
                 Type = FeedSourceType.CdcSocrata,
                 Url = "x9gk-5huc",
-                SoqlQuery = "SELECT reporting_area, mmwr_year, mmwr_week, label, m1 WHERE mmwr_year = 2026 LIMIT 5000",
+                SoqlQuery = "SELECT states, year, week, label, m1, m2 WHERE year = '2026' ORDER BY sort_order DESC LIMIT 5000",
                 PollingInterval = TimeSpan.FromHours(24),
                 IsEnabled = true,
+                AutoPublish = true,
                 LastSyncStatus = FeedSyncStatus.NeverRun
             },
             new FeedSource
             {
-                Name = "CDC MMWR Reports",
+                Name = "CDC Food Safety Alerts",
                 Type = FeedSourceType.CdcRss,
                 Url = "https://tools.cdc.gov/api/v2/resources/media/316422.rss",
                 PollingInterval = TimeSpan.FromHours(12),
@@ -285,11 +298,12 @@ public static class DevelopmentDataSeeder
             },
             new FeedSource
             {
-                Name = "CDC Travel Health Notices",
+                Name = "CDC Outbreak Alerts",
                 Type = FeedSourceType.CdcRss,
                 Url = "https://tools.cdc.gov/api/v2/resources/media/285676.rss",
                 PollingInterval = TimeSpan.FromHours(12),
                 IsEnabled = true,
+                AutoPublish = true,
                 LastSyncStatus = FeedSyncStatus.NeverRun
             }
         ];

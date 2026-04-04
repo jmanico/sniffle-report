@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using SniffleReport.Api.Models.Configuration;
 using SniffleReport.Api.Models.Entities;
 using SniffleReport.Api.Models.Enums;
 using SniffleReport.Api.Services.Ingestion.Connectors;
@@ -32,7 +34,7 @@ public sealed class CdcSocrataConnectorTests
 
         var handler = new FakeHttpHandler(json);
         var factory = new FakeHttpClientFactory(handler, "CdcSocrata", "https://data.cdc.gov/");
-        var connector = new CdcSocrataConnector(factory, NullLogger<CdcSocrataConnector>.Instance);
+        var connector = new CdcSocrataConnector(factory, Options.Create(new FeedIngestionOptions()), NullLogger<CdcSocrataConnector>.Instance);
 
         var source = new FeedSource
         {
@@ -60,7 +62,7 @@ public sealed class CdcSocrataConnectorTests
     {
         var handler = new FakeHttpHandler("[]");
         var factory = new FakeHttpClientFactory(handler, "CdcSocrata", "https://data.cdc.gov/");
-        var connector = new CdcSocrataConnector(factory, NullLogger<CdcSocrataConnector>.Instance);
+        var connector = new CdcSocrataConnector(factory, Options.Create(new FeedIngestionOptions()), NullLogger<CdcSocrataConnector>.Instance);
 
         var source = new FeedSource
         {
@@ -80,7 +82,7 @@ public sealed class CdcSocrataConnectorTests
     {
         var handler = new FakeHttpHandler(statusCode: HttpStatusCode.InternalServerError);
         var factory = new FakeHttpClientFactory(handler, "CdcSocrata", "https://data.cdc.gov/");
-        var connector = new CdcSocrataConnector(factory, NullLogger<CdcSocrataConnector>.Instance);
+        var connector = new CdcSocrataConnector(factory, Options.Create(new FeedIngestionOptions()), NullLogger<CdcSocrataConnector>.Instance);
 
         var source = new FeedSource
         {
@@ -100,7 +102,7 @@ public sealed class CdcSocrataConnectorTests
     {
         var handler = new FakeHttpHandler("{not valid json}}}");
         var factory = new FakeHttpClientFactory(handler, "CdcSocrata", "https://data.cdc.gov/");
-        var connector = new CdcSocrataConnector(factory, NullLogger<CdcSocrataConnector>.Instance);
+        var connector = new CdcSocrataConnector(factory, Options.Create(new FeedIngestionOptions()), NullLogger<CdcSocrataConnector>.Instance);
 
         var source = new FeedSource
         {
@@ -131,7 +133,7 @@ public sealed class CdcSocrataConnectorTests
 
         var handler = new FakeHttpHandler(json);
         var factory = new FakeHttpClientFactory(handler, "CdcSocrata", "https://data.cdc.gov/");
-        var connector = new CdcSocrataConnector(factory, NullLogger<CdcSocrataConnector>.Instance);
+        var connector = new CdcSocrataConnector(factory, Options.Create(new FeedIngestionOptions()), NullLogger<CdcSocrataConnector>.Instance);
 
         var source = new FeedSource
         {

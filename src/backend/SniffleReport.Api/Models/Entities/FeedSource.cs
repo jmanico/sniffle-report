@@ -16,6 +16,8 @@ public sealed class FeedSource : EntityBase
 
     public bool IsEnabled { get; set; }
 
+    public bool AutoPublish { get; set; }
+
     public DateTime? LastSyncStartedAt { get; set; }
 
     public DateTime? LastSyncCompletedAt { get; set; }

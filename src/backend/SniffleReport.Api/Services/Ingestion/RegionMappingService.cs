@@ -6,16 +6,20 @@ namespace SniffleReport.Api.Services.Ingestion;
 
 public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionMappingService> logger)
 {
+    private const string NationalRegionName = "United States";
+
     private Dictionary<string, Guid>? _stateNameIndex;
     private Dictionary<string, Guid>? _stateCodeIndex;
     private Dictionary<string, Guid>? _countyIndex;
+    private Guid? _nationalRegionId;
 
     public async Task<Guid?> ResolveRegionIdAsync(string? jurisdictionName, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(jurisdictionName))
-            return null;
-
         await EnsureCacheLoadedAsync(ct);
+
+        // Null jurisdiction → fall back to national region (for RSS feeds, etc.)
+        if (string.IsNullOrWhiteSpace(jurisdictionName))
+            return _nationalRegionId;
 
         var normalized = jurisdictionName.Trim();
 
@@ -40,6 +44,7 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
         _stateNameIndex = null;
         _stateCodeIndex = null;
         _countyIndex = null;
+        _nationalRegionId = null;
     }
 
     private async Task EnsureCacheLoadedAsync(CancellationToken ct)
@@ -55,11 +60,18 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
         _stateNameIndex = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         _stateCodeIndex = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         _countyIndex = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        _nationalRegionId = null;
 
         foreach (var r in regions)
         {
             var nameKey = r.Name.ToUpperInvariant();
             var stateKey = r.State.ToUpperInvariant();
+
+            // Check for the national-level region
+            if (r.Name.Equals(NationalRegionName, StringComparison.OrdinalIgnoreCase))
+            {
+                _nationalRegionId = r.Id;
+            }
 
             switch (r.Type)
             {
@@ -80,9 +92,13 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
             }
         }
 
+        if (_nationalRegionId is null)
+            logger.LogWarning("No '{NationalRegion}' region found — RSS items with no jurisdiction will be skipped", NationalRegionName);
+
         logger.LogInformation(
-            "Region cache loaded: {StateCount} states, {CountyCount} county/metro entries",
+            "Region cache loaded: {StateCount} states, {CountyCount} county/metro entries, national={HasNational}",
             _stateNameIndex.Count,
-            _countyIndex.Count);
+            _countyIndex.Count,
+            _nationalRegionId.HasValue);
     }
 }

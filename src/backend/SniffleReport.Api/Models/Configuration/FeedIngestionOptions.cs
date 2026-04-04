@@ -12,6 +12,8 @@ public sealed class FeedIngestionOptions
 
     public int RetryBaseDelaySeconds { get; set; } = 5;
 
+    public string? SocrataAppToken { get; set; }
+
     public AlertThresholdOptions Thresholds { get; set; } = new();
 }
 

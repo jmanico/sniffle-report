@@ -80,6 +80,7 @@ public sealed class AdminFeedsController(
             SoqlQuery = source.SoqlQuery,
             PollingInterval = source.PollingInterval,
             IsEnabled = source.IsEnabled,
+            AutoPublish = source.AutoPublish,
             LastSyncStartedAt = source.LastSyncStartedAt,
             LastSyncCompletedAt = source.LastSyncCompletedAt,
             LastSyncStatus = source.LastSyncStatus,
@@ -108,6 +109,7 @@ public sealed class AdminFeedsController(
             SoqlQuery = request.SoqlQuery?.Trim(),
             PollingInterval = TimeSpan.FromMinutes(request.PollingIntervalMinutes),
             IsEnabled = request.IsEnabled,
+            AutoPublish = request.AutoPublish,
             LastSyncStatus = FeedSyncStatus.NeverRun
         };
         dbContext.FeedSources.Add(source);
@@ -122,6 +124,7 @@ public sealed class AdminFeedsController(
             SoqlQuery = source.SoqlQuery,
             PollingInterval = source.PollingInterval,
             IsEnabled = source.IsEnabled,
+            AutoPublish = source.AutoPublish,
             LastSyncStatus = source.LastSyncStatus,
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt,
@@ -148,6 +151,7 @@ public sealed class AdminFeedsController(
         source.SoqlQuery = request.SoqlQuery?.Trim();
         source.PollingInterval = TimeSpan.FromMinutes(request.PollingIntervalMinutes);
         source.IsEnabled = request.IsEnabled;
+        source.AutoPublish = request.AutoPublish;
         source.UpdatedAt = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(ct);
