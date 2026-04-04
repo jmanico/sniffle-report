@@ -22,3 +22,16 @@ public sealed class AlertFilters
 
     public string? SortDirection { get; init; }
 }
+
+public sealed class AdminAlertFilters
+{
+    public Guid? RegionId { get; init; }
+
+    public string? Disease { get; init; }
+
+    public AlertStatus? Status { get; init; }
+
+    public int Page { get; init; } = 1;
+
+    public int PageSize { get; init; } = 25;
+}

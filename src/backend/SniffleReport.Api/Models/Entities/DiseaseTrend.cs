@@ -15,4 +15,8 @@ public sealed class DiseaseTrend : EntityBase
     public DateTime SourceDate { get; set; }
 
     public string? Notes { get; set; }
+
+    public Guid? IngestedRecordId { get; set; }
+
+    public IngestedRecord? IngestedRecord { get; set; }
 }

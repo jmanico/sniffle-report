@@ -1,13 +1,8 @@
 import { type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 
+import { useRegionById } from '../../hooks/useRegions'
 import { RegionContext, type RegionContextValue } from './region-context'
-
-const KnownRegions: Record<string, string> = {
-  'travis-county-tx': 'Travis County, TX',
-  'cook-county-il': 'Cook County, IL',
-  'king-county-wa': 'King County, WA',
-}
 
 export function RegionProvider({ children }: { children: ReactNode }) {
   const { regionId } = useParams()
@@ -16,7 +11,10 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     throw new Error('RegionProvider requires a regionId route param.')
   }
 
-  const regionLabel = KnownRegions[regionId] ?? regionId.replaceAll('-', ' ')
+  const regionQuery = useRegionById(regionId)
+  const regionLabel = regionQuery.data
+    ? `${regionQuery.data.name}, ${regionQuery.data.state}`
+    : regionId
 
   const value: RegionContextValue = {
     regionId,

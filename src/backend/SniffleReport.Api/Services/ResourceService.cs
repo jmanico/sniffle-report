@@ -3,11 +3,139 @@ using Microsoft.EntityFrameworkCore;
 using SniffleReport.Api.Data;
 using SniffleReport.Api.Models.DTOs;
 using SniffleReport.Api.Models.Entities;
+using SniffleReport.Api.Models.Enums;
 
 namespace SniffleReport.Api.Services;
 
 public sealed class ResourceService(AppDbContext dbContext)
 {
+    public async Task<IReadOnlyList<LocalResource>> GetAdminResourcesAsync(
+        GetAdminResourcesQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        return await BuildAdminFilteredQuery(query)
+            .OrderBy(resource => resource.Name)
+            .Skip((query.Page - 1) * query.PageSize)
+            .Take(query.PageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> CountAdminResourcesAsync(
+        GetAdminResourcesQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        return BuildAdminFilteredQuery(query).CountAsync(cancellationToken);
+    }
+
+    public Task<LocalResource?> GetAdminByIdAsync(Guid resourceId, CancellationToken cancellationToken = default)
+    {
+        return dbContext.LocalResources
+            .AsNoTracking()
+            .SingleOrDefaultAsync(resource => resource.Id == resourceId, cancellationToken);
+    }
+
+    public async Task<LocalResource> CreateAsync(
+        CreateResourceRequest request,
+        CancellationToken cancellationToken = default,
+        Guid adminId = default)
+    {
+        var resource = new LocalResource
+        {
+            RegionId = request.RegionId,
+            Name = request.Name.Trim(),
+            Type = request.Type,
+            Address = request.Address.Trim(),
+            Phone = NormalizeOptional(request.Phone),
+            Website = NormalizeOptional(request.Website),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            HoursJson = SerializeHours(request.Hours),
+            ServicesJson = SerializeServices(request.Services)
+        };
+
+        dbContext.LocalResources.Add(resource);
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            adminId,
+            AuditLogAction.Create,
+            nameof(LocalResource),
+            resource.Id,
+            before: null,
+            after: CreateResourceSnapshot(resource),
+            justification: null));
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return resource;
+    }
+
+    public async Task<LocalResource?> UpdateAsync(
+        Guid resourceId,
+        UpdateResourceRequest request,
+        CancellationToken cancellationToken = default,
+        Guid adminId = default)
+    {
+        var resource = await dbContext.LocalResources
+            .SingleOrDefaultAsync(existing => existing.Id == resourceId, cancellationToken);
+
+        if (resource is null)
+        {
+            return null;
+        }
+
+        var before = CreateResourceSnapshot(resource);
+
+        resource.RegionId = request.RegionId;
+        resource.Name = request.Name.Trim();
+        resource.Type = request.Type;
+        resource.Address = request.Address.Trim();
+        resource.Phone = NormalizeOptional(request.Phone);
+        resource.Website = NormalizeOptional(request.Website);
+        resource.Latitude = request.Latitude;
+        resource.Longitude = request.Longitude;
+        resource.HoursJson = SerializeHours(request.Hours);
+        resource.ServicesJson = SerializeServices(request.Services);
+
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            adminId,
+            AuditLogAction.Update,
+            nameof(LocalResource),
+            resource.Id,
+            before,
+            CreateResourceSnapshot(resource),
+            justification: null));
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return resource;
+    }
+
+    public async Task<bool> DeleteAsync(
+        Guid resourceId,
+        string justification,
+        CancellationToken cancellationToken = default,
+        Guid adminId = default)
+    {
+        var resource = await dbContext.LocalResources
+            .SingleOrDefaultAsync(existing => existing.Id == resourceId, cancellationToken);
+
+        if (resource is null)
+        {
+            return false;
+        }
+
+        var before = CreateResourceSnapshot(resource);
+        dbContext.LocalResources.Remove(resource);
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            adminId,
+            AuditLogAction.Delete,
+            nameof(LocalResource),
+            resource.Id,
+            before,
+            after: null,
+            justification));
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+
     public async Task<IReadOnlyList<ResourceListDto>> GetByRegionAsync(
         Guid regionId,
         ResourceFilters filters,
@@ -125,6 +253,29 @@ public sealed class ResourceService(AppDbContext dbContext)
         return query;
     }
 
+    private IQueryable<LocalResource> BuildAdminFilteredQuery(GetAdminResourcesQuery query)
+    {
+        IQueryable<LocalResource> resources = dbContext.LocalResources.AsNoTracking();
+
+        if (query.RegionId.HasValue)
+        {
+            resources = resources.Where(resource => resource.RegionId == query.RegionId.Value);
+        }
+
+        if (query.Type.HasValue)
+        {
+            resources = resources.Where(resource => resource.Type == query.Type.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Name))
+        {
+            var normalizedName = query.Name.Trim().ToLowerInvariant();
+            resources = resources.Where(resource => resource.Name.ToLower().Contains(normalizedName));
+        }
+
+        return resources;
+    }
+
     private async Task<IReadOnlyCollection<Guid>> GetScopedRegionIdsAsync(Guid rootRegionId, CancellationToken cancellationToken)
     {
         var regions = await dbContext.Regions
@@ -190,7 +341,7 @@ public sealed class ResourceService(AppDbContext dbContext)
         };
     }
 
-    private static ResourceHoursDto ParseHours(string hoursJson)
+    internal static ResourceHoursDto ParseHours(string hoursJson)
     {
         var hours = JsonSerializer.Deserialize<Dictionary<string, string>>(hoursJson) ?? [];
 
@@ -214,9 +365,64 @@ public sealed class ResourceService(AppDbContext dbContext)
         };
     }
 
-    private static IReadOnlyList<string> ParseServices(string servicesJson)
+    internal static IReadOnlyList<string> ParseServices(string servicesJson)
     {
         return JsonSerializer.Deserialize<List<string>>(servicesJson) ?? [];
+    }
+
+    private static string SerializeHours(ResourceHoursDto hours)
+    {
+        var dictionary = new Dictionary<string, string>();
+
+        AddIfPresent(dictionary, "mon", hours.Mon);
+        AddIfPresent(dictionary, "tue", hours.Tue);
+        AddIfPresent(dictionary, "wed", hours.Wed);
+        AddIfPresent(dictionary, "thu", hours.Thu);
+        AddIfPresent(dictionary, "fri", hours.Fri);
+        AddIfPresent(dictionary, "sat", hours.Sat);
+        AddIfPresent(dictionary, "sun", hours.Sun);
+
+        return JsonSerializer.Serialize(dictionary);
+    }
+
+    private static string SerializeServices(IReadOnlyList<string> services)
+    {
+        return JsonSerializer.Serialize(
+            services
+                .Select(service => service.Trim())
+                .Where(service => service.Length > 0)
+                .ToList());
+    }
+
+    private static void AddIfPresent(IDictionary<string, string> dictionary, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            dictionary[key] = value.Trim();
+        }
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static object CreateResourceSnapshot(LocalResource resource)
+    {
+        return new
+        {
+            resource.Id,
+            resource.RegionId,
+            resource.Name,
+            resource.Type,
+            resource.Address,
+            resource.Phone,
+            resource.Website,
+            resource.Latitude,
+            resource.Longitude,
+            Hours = ParseHours(resource.HoursJson),
+            Services = ParseServices(resource.ServicesJson)
+        };
     }
 
     private static double DegreesToRadians(double degrees)

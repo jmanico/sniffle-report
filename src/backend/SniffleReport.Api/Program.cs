@@ -1,7 +1,10 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SniffleReport.Api.Data;
+using SniffleReport.Api.Models.Configuration;
 using SniffleReport.Api.Services;
+using SniffleReport.Api.Services.Ingestion;
+using SniffleReport.Api.Services.Ingestion.Connectors;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,10 +23,38 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     });
 });
 builder.Services.AddScoped<AlertService>();
+builder.Services.AddScoped<NewsService>();
 builder.Services.AddScoped<PreventionService>();
 builder.Services.AddScoped<RegionService>();
 builder.Services.AddScoped<ResourceService>();
 builder.Services.AddScoped<TrendService>();
+
+// Feed ingestion configuration
+builder.Services.Configure<FeedIngestionOptions>(
+    builder.Configuration.GetSection(FeedIngestionOptions.SectionName));
+
+// Named HttpClients for external feeds
+builder.Services.AddHttpClient("CdcSocrata", client =>
+{
+    client.BaseAddress = new Uri("https://data.cdc.gov/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
+});
+builder.Services.AddHttpClient("CdcRss", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
+});
+
+// Feed connectors and ingestion services
+builder.Services.AddScoped<IFeedConnector, CdcSocrataConnector>();
+builder.Services.AddScoped<IFeedConnector, CdcRssConnector>();
+builder.Services.AddScoped<RegionMappingService>();
+builder.Services.AddScoped<AlertThresholdService>();
+builder.Services.AddScoped<IngestionService>();
+
+// Background polling service
+builder.Services.AddHostedService<FeedPollingBackgroundService>();
 
 var app = builder.Build();
 
