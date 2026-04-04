@@ -287,7 +287,7 @@ public sealed class IngestionService(
             CaseCount = 0,
             SourceAttribution = source.Name,
             SourceDate = DateTime.UtcNow,
-            Status = AlertStatus.Draft
+            Status = source.AutoPublish ? AlertStatus.Published : AlertStatus.Draft
         };
         dbContext.HealthAlerts.Add(alert);
 

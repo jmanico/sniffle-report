@@ -13,6 +13,8 @@ public sealed class UpdateFeedSourceRequest
     public int PollingIntervalMinutes { get; init; } = 360;
 
     public bool IsEnabled { get; init; } = true;
+
+    public bool AutoPublish { get; init; }
 }
 
 public sealed class UpdateFeedSourceRequestValidator : AbstractValidator<UpdateFeedSourceRequest>

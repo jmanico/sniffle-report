@@ -18,6 +18,8 @@ public sealed class FeedSourceDetailDto
 
     public bool IsEnabled { get; init; }
 
+    public bool AutoPublish { get; init; }
+
     public DateTime? LastSyncStartedAt { get; init; }
 
     public DateTime? LastSyncCompletedAt { get; init; }
