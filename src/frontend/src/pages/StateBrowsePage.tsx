@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 
 import { useStateDetail } from '../hooks/useStaticData'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
@@ -73,6 +73,11 @@ export function StateBrowsePage() {
         </article>
       </section>
     )
+  }
+
+  // Single-county states (e.g., DC) — go straight to the dashboard
+  if (state.counties.length === 1) {
+    return <Navigate to={`/region/${state.counties[0].id}`} replace />
   }
 
   return (
