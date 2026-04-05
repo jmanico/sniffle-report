@@ -100,8 +100,10 @@ public sealed class RegionSnapshotBuilder(
         var prevention = CollectFromDescendants(preventionByRegion, descendantIds);
         var resources = CollectFromDescendants(resourcesByRegion, descendantIds);
 
-        // Top alerts: by severity desc, then sourceDate desc
+        // Top alerts: exclude community health indicators (PLACES data) — those are
+        // population stats, not disease outbreak alerts. Sort by severity then date.
         var topAlerts = alerts
+            .Where(a => !a.Disease.StartsWith("[Community Health]", StringComparison.Ordinal))
             .OrderByDescending(a => a.Severity)
             .ThenByDescending(a => a.SourceDate)
             .Take(config.TopAlertsCount)

@@ -204,7 +204,7 @@ public sealed class IngestionService(
     {
         // Find or create a parent HealthAlert for this region + disease
         var disease = record.Disease?.Trim() ?? "Unknown";
-        var alert = await FindOrCreateAlertAsync(regionId, disease, source, ct);
+        var alert = await FindOrCreateAlertAsync(regionId, disease, source, record.Title, record.Summary, ct);
 
         var trend = new DiseaseTrend
         {
@@ -328,6 +328,8 @@ public sealed class IngestionService(
         Guid regionId,
         string disease,
         FeedSource source,
+        string? recordTitle,
+        string? recordSummary,
         CancellationToken ct)
     {
         // Look for an existing non-archived alert for this region + disease
@@ -339,14 +341,28 @@ public sealed class IngestionService(
                 ct);
 
         if (existing is not null)
+        {
+            // Update title/summary if better data is available
+            if (recordTitle is not null && existing.Title.Contains("data from"))
+            {
+                existing.Title = recordTitle.Length > 200 ? recordTitle[..200] : recordTitle;
+            }
+            if (recordSummary is not null && existing.Summary.StartsWith("Surveillance data"))
+            {
+                existing.Summary = recordSummary.Length > 2000 ? recordSummary[..2000] : recordSummary;
+            }
             return existing;
+        }
+
+        var title = recordTitle ?? $"{disease} — data from {source.Name}";
+        var summary = recordSummary ?? $"Surveillance data ingested from {source.Name}.";
 
         var alert = new HealthAlert
         {
             RegionId = regionId,
             Disease = disease,
-            Title = $"{disease} — data from {source.Name}",
-            Summary = $"Surveillance data ingested from {source.Name}.",
+            Title = title.Length > 200 ? title[..200] : title,
+            Summary = summary.Length > 2000 ? summary[..2000] : summary,
             Severity = AlertSeverity.Low,
             CaseCount = 0,
             SourceAttribution = source.Name,

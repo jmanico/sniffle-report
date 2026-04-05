@@ -34,10 +34,12 @@ public sealed class SocrataParserTests
         Assert.True(result.IsSuccess);
         Assert.Single(result.Records);
         var record = result.Records[0];
-        Assert.Equal("Diabetes among adults", record.Disease);
+        Assert.Equal("[Community Health] Diabetes among adults", record.Disease);
         Assert.Equal("Travis County, TX", record.JurisdictionName);
         Assert.Equal(11, record.CaseCount);
         Assert.Contains("places:", record.ExternalSourceId);
+        Assert.Contains("11.3%", record.Title);
+        Assert.Contains("age-adjusted", record.Title!.ToLower());
     }
 
     [Fact]

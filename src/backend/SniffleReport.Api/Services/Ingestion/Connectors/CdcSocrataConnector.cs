@@ -325,18 +325,28 @@ public sealed class CdcSocrataConnector(
         var jurisdiction = $"{countyName} County, {stateAbbr}";
         var externalId = $"places:{stateAbbr}:{countyName}:{measure}";
 
+        var title = valueStr is not null
+            ? $"{measure}: {valueStr}% (age-adjusted)"
+            : measure;
+
+        var category = GetStringField(row, "category") ?? "Health Outcomes";
+        var summary = $"{category} — {measure}. Age-adjusted prevalence: {valueStr ?? "N/A"}%. "
+            + $"Source: CDC PLACES (Behavioral Risk Factor Surveillance System). "
+            + $"County: {countyName}, {stateAbbr}.";
+
         return new NormalizedFeedRecord
         {
             ExternalSourceId = externalId,
             RawPayloadJson = row.GetRawText(),
             RecordType = NormalizedRecordType.TrendDataPoint,
-            Disease = measure,
+            Disease = $"[Community Health] {measure}",
             JurisdictionName = jurisdiction,
             CaseCount = value,
             DataDate = DateTime.UtcNow,
             SourceDate = DateTime.UtcNow,
             SourceAttribution = "CDC PLACES",
-            Summary = valueStr is not null ? $"{measure}: {valueStr}%" : null
+            Title = title,
+            Summary = summary
         };
     }
 
