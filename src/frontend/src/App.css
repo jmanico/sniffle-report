@@ -1403,6 +1403,83 @@
   flex-shrink: 0;
 }
 
+/* ── Breadcrumbs ──────────────────────────────────── */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--ink-soft, #536774);
+}
+
+.breadcrumb a {
+  color: var(--accent, #be5b2a);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb__sep {
+  color: var(--ink-soft, #aaa);
+  margin: 0 0.125rem;
+}
+
+/* ── State grid ───────────────────────────────────── */
+
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--color-border, #e8e0d4);
+  border-radius: 0.5rem;
+  background: var(--paper, #f8f3e8);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.state-card:hover {
+  border-color: var(--accent, #be5b2a);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.state-card__name {
+  font-size: 0.9375rem;
+  color: var(--ink, #102d3d);
+}
+
+.state-card__meta {
+  font-size: 0.75rem;
+  color: var(--ink-soft, #536774);
+}
+
+.state-card__stats {
+  font-size: 0.6875rem;
+  color: var(--ink-soft, #536774);
+  margin-top: 0.125rem;
+}
+
+.page-badge--link {
+  color: var(--accent, #be5b2a);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.page-badge--link:hover {
+  text-decoration: underline;
+}
+
 .fact-check-badge--verified { background: #d4edda; color: #155724; }
 .fact-check-badge--pending { background: #e2e3e5; color: #383d41; }
 .fact-check-badge--disputed { background: #f8d7da; color: #721c24; }

@@ -1,59 +1,64 @@
 import { Link } from 'react-router-dom'
 
-import { PwaStatusBanner } from '../components/layout/PwaStatusBanner'
-import { RegionSearchPanel } from '../components/region/RegionSearchPanel'
+import { useStates } from '../hooks/useStaticData'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
-const spotlightCards = [
-  {
-    kicker: 'Alert lanes',
-    title: 'Track what is active nearby without drifting into national noise.',
-  },
-  {
-    kicker: 'Trend framing',
-    title: 'Case curves stay attached to a specific region and specific alert context.',
-  },
-  {
-    kicker: 'Access answers',
-    title: 'Prevention cost tiers and local resource directories sit next to the news cycle.',
-  },
-]
-
 export function HomePage() {
+  const statesQuery = useStates()
+  const states = statesQuery.data ?? []
+
   return (
-    <main className="landing-page">
-      <section className="landing-hero">
-        <span className="section-kicker">Public health, scoped correctly</span>
-        <h1>Regional health intelligence shaped by the place you actually live in.</h1>
-        <p>
-          Start by selecting a real region from the backend dataset. Search is
-          debounced, region routes are shareable, and the selected region
-          becomes the scope for every public health view in the app.
-        </p>
-        <div className="landing-links">
-          <Link className="landing-link" to={validateAndSanitizeUrl('/admin')}>
-            Admin entry
-          </Link>
-        </div>
-      </section>
+    <section className="page-frame">
+      <div className="page-stack">
+        <article className="page-hero">
+          <span className="page-kicker">Sniffle Report</span>
+          <h1>Community health data for every US county</h1>
+          <p>
+            Regional health trends, disease surveillance, local clinics and pharmacies,
+            prevention guidance, and drug safety alerts — sourced from CDC, FDA, and CMS.
+            Updated automatically from 12 public data feeds.
+          </p>
+          <div className="page-badges">
+            <span className="page-badge">{states.length} states and territories</span>
+            <span className="page-badge">
+              {states.reduce((sum, s) => sum + s.countyCount, 0).toLocaleString()} counties
+            </span>
+            <Link className="page-badge page-badge--link" to="/status">
+              System status
+            </Link>
+          </div>
+        </article>
 
-      <PwaStatusBanner />
+        <section className="page-panel">
+          <span className="section-kicker">Browse by state</span>
+          <strong>Select a state to see counties, alerts, and local resources.</strong>
 
-      <RegionSearchPanel
-        className="region-search region-search--landing"
-        description="Search counties, metros, ZIP regions, and states, then jump directly into that dashboard."
-        heading="Choose a region"
-        inputLabel="Find your region"
-      />
-
-      <section className="spotlight-grid" aria-label="Application shell highlights">
-        {spotlightCards.map((card) => (
-          <article className="spotlight-card" key={card.kicker}>
-            <span className="section-kicker">{card.kicker}</span>
-            <strong>{card.title}</strong>
-          </article>
-        ))}
-      </section>
-    </main>
+          {statesQuery.isLoading ? (
+            <div className="dashboard-skeleton-group" aria-hidden="true">
+              <div className="dashboard-skeleton dashboard-skeleton--card" />
+            </div>
+          ) : (
+            <div className="state-grid">
+              {states.map((state) => (
+                <Link
+                  className="state-card"
+                  key={state.code}
+                  to={validateAndSanitizeUrl(`/states/${state.code}`)}
+                >
+                  <strong className="state-card__name">{state.name}</strong>
+                  <span className="state-card__meta">
+                    {state.countyCount} counties
+                  </span>
+                  <span className="state-card__stats">
+                    {state.publishedAlertCount > 0 ? `${state.publishedAlertCount} alerts` : 'No alerts'}
+                    {state.resourceTotal > 0 ? ` · ${state.resourceTotal} resources` : ''}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
   )
 }

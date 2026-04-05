@@ -1,11 +1,9 @@
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import type { SnapshotTrendHighlight } from '../api/types'
 import { FactCheckBadge } from '../components/news/FactCheckBadge'
 import { SeverityBadge } from '../components/dashboard/SeverityBadge'
-import { useRegion } from '../hooks/useRegion'
-import { useDashboard } from '../hooks/useDashboard'
-import { useRegionById } from '../hooks/useRegions'
+import { useStaticDashboard } from '../hooks/useStaticData'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
 const severityRank: Record<string, number> = {
@@ -14,13 +12,6 @@ const severityRank: Record<string, number> = {
   Moderate: 2,
   Low: 1,
 }
-
-const dashboardLinks = [
-  { label: 'All alerts', segment: 'alerts' },
-  { label: 'Prevention guides', segment: 'prevention' },
-  { label: 'Resources', segment: 'resources' },
-  { label: 'Health news', segment: 'news' },
-]
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -35,15 +26,23 @@ function formatWowChange(highlight: SnapshotTrendHighlight) {
   return `${sign}${highlight.wowChangePercent.toFixed(1)}%`
 }
 
-export function RegionalDashboardPage() {
-  const { regionId, regionLabel, buildRegionPath } = useRegion()
-  const regionQuery = useRegionById(regionId)
-  const dashboardQuery = useDashboard(regionId)
+function buildRegionPath(regionId: string, segment?: string) {
+  return segment ? `/region/${regionId}/${segment}` : `/region/${regionId}`
+}
 
+export function RegionalDashboardPage() {
+  const { regionId } = useParams<{ regionId: string }>()
+  const dashboardQuery = useStaticDashboard(regionId ?? '')
   const dashboard = dashboardQuery.data
-  const regionTypeLabel = regionQuery.data?.type ?? 'Region'
-  const isLoading = regionQuery.isLoading || dashboardQuery.isLoading
-  const hasError = regionQuery.isError || dashboardQuery.isError
+
+  const regionLabel = dashboard
+    ? dashboard.regionType === 'State'
+      ? dashboard.regionName
+      : `${dashboard.regionName}, ${dashboard.state}`
+    : 'Loading...'
+
+  const isLoading = dashboardQuery.isLoading
+  const hasError = dashboardQuery.isError
 
   const topAlerts = [...(dashboard?.topAlerts ?? [])]
     .sort((left, right) => {
@@ -70,29 +69,48 @@ export function RegionalDashboardPage() {
     ? resourceParts.join(', ')
     : 'No local resources indexed'
 
+  const dashboardLinks = [
+    { label: 'All alerts', segment: 'alerts' },
+    { label: 'Prevention guides', segment: 'prevention' },
+    { label: 'Resources', segment: 'resources' },
+    { label: 'Health news', segment: 'news' },
+  ]
+
   return (
     <section className="page-frame">
       <div className="page-stack dashboard-stack">
+        <nav className="breadcrumb">
+          <Link to="/">Home</Link>
+          {dashboard?.parentState ? (
+            <>
+              <span className="breadcrumb__sep">/</span>
+              <Link to={validateAndSanitizeUrl(`/states/${dashboard.parentState}`)}>
+                {dashboard.parentName}
+              </Link>
+            </>
+          ) : null}
+          <span className="breadcrumb__sep">/</span>
+          <span>{dashboard?.regionName ?? 'Loading'}</span>
+        </nav>
+
         <article className="page-hero">
           <span className="page-kicker">Regional dashboard</span>
           <h1>{regionLabel}</h1>
           <p>
-            {regionTypeLabel} overview for the selected region. This dashboard
-            surfaces the highest-signal alert, trend, prevention, and local
-            care access summaries without forcing users through every sub-page first.
+            {dashboard?.regionType ?? 'Region'} overview. Health alerts, disease trends,
+            local resources, and prevention guidance for this region.
           </p>
           <div className="page-badges">
             <span className="page-badge">{dashboard?.publishedAlertCount ?? 0} published alerts</span>
             <span className="page-badge">{resourceCounts?.total ?? 0} local resources</span>
-            <span className="page-badge">{dashboard?.preventionHighlights.length ?? 0} prevention guides</span>
           </div>
         </article>
 
         {hasError ? (
           <article className="page-panel dashboard-state-card">
             <span className="section-kicker">Data unavailable</span>
-            <strong>Some dashboard sections could not be loaded.</strong>
-            <p>Try refreshing the page or switching to another region.</p>
+            <strong>Dashboard data could not be loaded.</strong>
+            <p>This region may not have data yet. <Link to="/">Return home</Link></p>
           </article>
         ) : null}
 
@@ -103,25 +121,17 @@ export function RegionalDashboardPage() {
                 <span className="section-kicker">Active alerts</span>
                 <strong>Top published alerts by severity</strong>
               </div>
-              <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('alerts'))}>
-                View all alerts
-              </Link>
             </div>
 
             {isLoading ? (
               <div className="dashboard-skeleton-group" aria-hidden="true">
                 <div className="dashboard-skeleton dashboard-skeleton--line" />
                 <div className="dashboard-skeleton dashboard-skeleton--card" />
-                <div className="dashboard-skeleton dashboard-skeleton--card" />
               </div>
             ) : topAlerts.length ? (
               <div className="dashboard-alert-list">
                 {topAlerts.map((alert) => (
-                  <Link
-                    className="dashboard-alert-card"
-                    key={alert.alertId}
-                    to={validateAndSanitizeUrl(buildRegionPath(`alerts/${alert.alertId}`))}
-                  >
+                  <article className="dashboard-alert-card" key={alert.alertId}>
                     <div className="dashboard-alert-card__row">
                       <SeverityBadge severity={alert.severity as 'Low' | 'Moderate' | 'High' | 'Critical'} />
                       <span className="dashboard-alert-card__cases">{alert.caseCount} cases</span>
@@ -130,7 +140,7 @@ export function RegionalDashboardPage() {
                     <span className="dashboard-alert-card__meta">
                       {alert.disease} · {formatDate(alert.sourceDate)}
                     </span>
-                  </Link>
+                  </article>
                 ))}
               </div>
             ) : (
@@ -149,7 +159,6 @@ export function RegionalDashboardPage() {
             {isLoading ? (
               <div className="dashboard-skeleton-group" aria-hidden="true">
                 <div className="dashboard-skeleton dashboard-skeleton--line" />
-                <div className="dashboard-skeleton dashboard-skeleton--card" />
                 <div className="dashboard-skeleton dashboard-skeleton--card" />
               </div>
             ) : trendHighlights.length ? (
@@ -177,9 +186,6 @@ export function RegionalDashboardPage() {
                 <span className="section-kicker">Prevention highlights</span>
                 <strong>Quick access to guidance</strong>
               </div>
-              <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('prevention'))}>
-                Browse prevention
-              </Link>
             </div>
 
             {isLoading ? (
@@ -190,15 +196,11 @@ export function RegionalDashboardPage() {
             ) : dashboard?.preventionHighlights.length ? (
               <div className="dashboard-prevention-list">
                 {dashboard.preventionHighlights.map((guide) => (
-                  <Link
-                    className="dashboard-prevention-card"
-                    key={guide.guideId}
-                    to={validateAndSanitizeUrl(buildRegionPath(`prevention/${guide.guideId}`))}
-                  >
+                  <article className="dashboard-prevention-card" key={guide.guideId}>
                     <strong>{guide.title}</strong>
                     <span className="dashboard-prevention-card__meta">{guide.disease}</span>
                     <p>{guide.hasCostTiers ? 'Cost guidance available' : 'Cost details unavailable'}</p>
-                  </Link>
+                  </article>
                 ))}
               </div>
             ) : (
@@ -212,9 +214,6 @@ export function RegionalDashboardPage() {
                 <span className="section-kicker">Health news</span>
                 <strong>Recent alerts and recalls</strong>
               </div>
-              <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('news'))}>
-                View all news
-              </Link>
             </div>
 
             {isLoading ? (
@@ -245,9 +244,6 @@ export function RegionalDashboardPage() {
                 <span className="section-kicker">Local access</span>
                 <strong>Nearby healthcare resources</strong>
               </div>
-              <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('resources'))}>
-                Explore resources
-              </Link>
             </div>
 
             {isLoading ? (
@@ -274,7 +270,7 @@ export function RegionalDashboardPage() {
               <Link
                 className="dashboard-nav-link"
                 key={item.segment}
-                to={validateAndSanitizeUrl(buildRegionPath(item.segment))}
+                to={validateAndSanitizeUrl(buildRegionPath(regionId ?? '', item.segment))}
               >
                 {item.label}
               </Link>

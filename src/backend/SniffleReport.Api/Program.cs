@@ -6,6 +6,7 @@ using SniffleReport.Api.Services;
 using SniffleReport.Api.Services.Ingestion;
 using SniffleReport.Api.Services.Ingestion.Connectors;
 using SniffleReport.Api.Services.Snapshots;
+using SniffleReport.Api.StaticExport;
 
 var builder = WebApplication.CreateBuilder(args);
 const string LocalFrontendCorsPolicy = "LocalFrontend";
@@ -90,6 +91,9 @@ builder.Services.AddScoped<IngestionService>();
 
 // Background polling service
 builder.Services.AddHostedService<FeedPollingBackgroundService>();
+
+// Static site export
+builder.Services.AddScoped<StaticSiteExporter>();
 
 // Region snapshot configuration and background service
 builder.Services.Configure<SnapshotOptions>(
