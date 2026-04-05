@@ -1,41 +1,21 @@
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { RegionalDashboardPage } from './RegionalDashboardPage'
 
-vi.mock('../hooks/useRegion', () => ({
-  useRegion: () => ({
-    regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
-    regionLabel: 'Travis County, TX',
-    buildRegionPath: (segment = '') =>
-      segment ? `/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b/${segment}` : '/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
-  }),
-}))
-
-vi.mock('../hooks/useRegions', () => ({
-  useRegionById: () => ({
-    data: {
-      id: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
-      name: 'Travis County',
-      state: 'TX',
-      type: 'County',
-      childCount: 12,
-      latitude: 30.2672,
-      longitude: -97.7431,
-      parent: null,
-    },
-    isLoading: false,
-    isError: false,
-  }),
-}))
-
-vi.mock('../hooks/useDashboard', () => ({
-  useDashboard: () => ({
+vi.mock('../hooks/useStaticData', () => ({
+  useStaticDashboard: () => ({
     data: {
       regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
       computedAt: '2026-03-21T12:00:00Z',
       publishedAlertCount: 2,
+      regionName: 'Travis County',
+      state: 'TX',
+      regionType: 'County',
+      parentState: 'TX',
+      parentName: 'Texas',
       topAlerts: [
         {
           alertId: '1f1ecb6b-c7dc-4142-bdc7-bff8cb6c57e4',
@@ -88,15 +68,21 @@ vi.mock('../hooks/useDashboard', () => ({
 
 describe('RegionalDashboardPage', () => {
   it('renders dashboard summary sections from snapshot', () => {
+    const queryClient = new QueryClient()
+
     render(
-      <MemoryRouter>
-        <RegionalDashboardPage />
-      </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b']}>
+          <Routes>
+            <Route path="/region/:regionId" element={<RegionalDashboardPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
 
     expect(screen.getByRole('heading', { name: 'Travis County, TX' })).toBeInTheDocument()
     expect(screen.getByText(/12 clinics/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /view all alerts/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /all alerts/i })).toHaveAttribute(
       'href',
       '/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b/alerts',
     )

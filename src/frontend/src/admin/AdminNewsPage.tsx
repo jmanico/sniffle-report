@@ -7,7 +7,8 @@ import { adminNewsItemInputSchema, type AdminNewsItemInput } from '../api/types'
 import { useAdminNews, useAdminNewsItem } from '../hooks/useAdminContent'
 import { useRegions } from '../hooks/useRegions'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
-import { AdminLayout, AdminNotice, type AdminNoticeState, getFirstZodIssue, RegionSelect, toInputDate } from './AdminShared'
+import { type AdminNoticeState, getFirstZodIssue, toInputDate } from './AdminFormUtils'
+import { AdminLayout, AdminNotice, RegionSelect } from './AdminShared'
 
 const emptyDraft: AdminNewsItemInput = {
   regionId: '',
@@ -38,6 +39,7 @@ export function AdminNewsPage() {
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the editor draft must be replaced when a different news item loads
     setDraft({
       regionId: detailQuery.data.regionId,
       headline: detailQuery.data.headline,

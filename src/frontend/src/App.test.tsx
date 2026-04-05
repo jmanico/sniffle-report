@@ -9,7 +9,7 @@ describe('App', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: /regional health intelligence shaped by the place you actually live in/i,
+        name: /community health data for every us county/i,
       }),
     ).toBeInTheDocument()
   })

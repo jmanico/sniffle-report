@@ -31,12 +31,9 @@ function toQueryDate(date: Date) {
 export function AlertDetailPage() {
   const { alertId } = useParams()
   const { regionId, regionLabel, buildRegionPath } = useRegion()
-  const alertQuery = useAlertById(regionId, alertId ?? '')
+  const resolvedAlertId = alertId ?? ''
+  const alertQuery = useAlertById(regionId, resolvedAlertId)
   const [selectedRangeDays, setSelectedRangeDays] = useState<(typeof rangeOptions)[number]['days']>(90)
-
-  if (!alertId) {
-    return null
-  }
 
   const anchorDate = alertQuery.data?.trends[0]?.date
     ? new Date(alertQuery.data.trends[0].date)
@@ -44,12 +41,16 @@ export function AlertDetailPage() {
   const rangeStart = new Date(anchorDate)
   rangeStart.setUTCDate(rangeStart.getUTCDate() - selectedRangeDays)
 
-  const alertTrendsQuery = useAlertTrends(regionId, alertId, {
+  const alertTrendsQuery = useAlertTrends(regionId, resolvedAlertId, {
     dateFrom: toQueryDate(rangeStart),
     dateTo: toQueryDate(anchorDate),
     page: 1,
     pageSize: 100,
   })
+
+  if (!alertId) {
+    return null
+  }
 
   return (
     <section className="page-frame">

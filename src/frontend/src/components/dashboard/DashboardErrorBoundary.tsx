@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, type ReactNode } from 'react'
 
 type DashboardErrorBoundaryProps = {
   children: ReactNode
@@ -19,8 +19,6 @@ export class DashboardErrorBoundary extends Component<
   public static getDerivedStateFromError() {
     return { hasError: true }
   }
-
-  public componentDidCatch(_error: Error, _errorInfo: ErrorInfo) {}
 
   public render() {
     if (this.state.hasError) {

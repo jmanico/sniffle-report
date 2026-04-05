@@ -10,7 +10,8 @@ import { queryKeys } from '../api/queryKeys'
 import { adminPreventionGuideInputSchema, type AdminCostTierInput, type AdminPreventionGuideInput } from '../api/types'
 import { useAdminPrevention, useAdminPreventionGuide } from '../hooks/useAdminContent'
 import { useRegions } from '../hooks/useRegions'
-import { AdminLayout, AdminNotice, type AdminNoticeState, getFirstZodIssue, RegionSelect } from './AdminShared'
+import { type AdminNoticeState, getFirstZodIssue } from './AdminFormUtils'
+import { AdminLayout, AdminNotice, RegionSelect } from './AdminShared'
 
 const emptyTier: AdminCostTierInput = {
   type: 'Free',
@@ -48,6 +49,7 @@ export function AdminPreventionPage() {
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the editor draft must be replaced when a different guide loads
     setDraft({
       regionId: detailQuery.data.regionId,
       disease: detailQuery.data.disease,

@@ -6,7 +6,8 @@ import { queryKeys } from '../api/queryKeys'
 import { adminResourceInputSchema, type AdminResourceInput, type ResourceHours, type ResourceType } from '../api/types'
 import { useAdminResource, useAdminResources } from '../hooks/useAdminContent'
 import { useRegions } from '../hooks/useRegions'
-import { AdminLayout, AdminNotice, type AdminNoticeState, getFirstZodIssue, RegionSelect } from './AdminShared'
+import { type AdminNoticeState, getFirstZodIssue } from './AdminFormUtils'
+import { AdminLayout, AdminNotice, RegionSelect } from './AdminShared'
 
 const emptyHours: ResourceHours = {
   mon: null,
@@ -57,6 +58,7 @@ export function AdminResourcesPage() {
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the editor draft must be replaced when a different resource loads
     setDraft({
       regionId: detailQuery.data.regionId,
       name: detailQuery.data.name,

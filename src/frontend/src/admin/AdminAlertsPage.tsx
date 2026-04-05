@@ -17,7 +17,8 @@ import {
 } from '../api/types'
 import { useAdminAlert, useAdminAlerts } from '../hooks/useAdminContent'
 import { useRegions } from '../hooks/useRegions'
-import { AdminLayout, AdminNotice, type AdminNoticeState, getFirstZodIssue, RegionSelect, toInputDate } from './AdminShared'
+import { type AdminNoticeState, getFirstZodIssue, toInputDate } from './AdminFormUtils'
+import { AdminLayout, AdminNotice, RegionSelect } from './AdminShared'
 
 const emptyDraft: AdminAlertInput = {
   regionId: '',
@@ -54,6 +55,7 @@ export function AdminAlertsPage() {
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the editor draft must be replaced when a different alert loads
     setDraft({
       regionId: detailQuery.data.regionId,
       disease: detailQuery.data.disease,
