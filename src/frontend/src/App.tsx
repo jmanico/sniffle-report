@@ -39,6 +39,9 @@ const ResourceDetailPage = lazy(() =>
 const ResourcesPage = lazy(() =>
   import('./pages/ResourcesPage').then((module) => ({ default: module.ResourcesPage })),
 )
+const StatusPage = lazy(() =>
+  import('./pages/StatusPage').then((module) => ({ default: module.StatusPage })),
+)
 
 function RouteFallback() {
   return <div className="route-loading">Loading page…</div>
@@ -51,6 +54,7 @@ function App() {
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/status" element={<StatusPage />} />
             <Route
               path="/region/:regionId"
               element={
