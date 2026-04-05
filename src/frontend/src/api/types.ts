@@ -383,9 +383,14 @@ export const snapshotAlertSummarySchema = z.object({
   alertId: guidSchema,
   disease: z.string().min(1),
   title: z.string().min(1),
+  summary: z.string(),
   severity: z.string().min(1),
   caseCount: z.number().int().nonnegative(),
+  sourceAttribution: z.string(),
   sourceDate: isoDateTimeSchema,
+  previousCaseCount: z.number().int().nonnegative().nullable().optional(),
+  wowChangePercent: z.number().nullable().optional(),
+  previousSourceDate: isoDateTimeSchema.nullable().optional(),
 })
 
 export const snapshotTrendHighlightSchema = z.object({

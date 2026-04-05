@@ -107,14 +107,35 @@ public sealed class RegionSnapshotBuilder(
             .OrderByDescending(a => a.Severity)
             .ThenByDescending(a => a.SourceDate)
             .Take(config.TopAlertsCount)
-            .Select(a => new SnapshotAlertSummary
+            .Select(a =>
             {
-                AlertId = a.AlertId,
-                Disease = a.Disease,
-                Title = a.Title,
-                Severity = a.Severity.ToString(),
-                CaseCount = a.CaseCount,
-                SourceDate = a.SourceDate
+                var orderedTrendPoints = trendsByAlert.TryGetValue(a.AlertId, out var alertTrends)
+                    ? alertTrends.OrderByDescending(t => t.Date).ToList()
+                    : [];
+                var previousPoint = orderedTrendPoints.Count > 1 ? orderedTrendPoints[1] : null;
+                double? wowChangePercent = null;
+
+                if (previousPoint is not null)
+                {
+                    wowChangePercent = previousPoint.CaseCount == 0
+                        ? (a.CaseCount == 0 ? 0d : 100d)
+                        : Math.Round(((a.CaseCount - previousPoint.CaseCount) / (double)previousPoint.CaseCount) * 100d, 1);
+                }
+
+                return new SnapshotAlertSummary
+                {
+                    AlertId = a.AlertId,
+                    Disease = a.Disease,
+                    Title = a.Title,
+                    Summary = a.Summary,
+                    Severity = a.Severity.ToString(),
+                    CaseCount = a.CaseCount,
+                    SourceAttribution = a.SourceAttribution,
+                    SourceDate = a.SourceDate,
+                    PreviousCaseCount = previousPoint?.CaseCount,
+                    WowChangePercent = wowChangePercent,
+                    PreviousSourceDate = previousPoint?.Date
+                };
             })
             .ToList();
 
@@ -240,8 +261,10 @@ public sealed class RegionSnapshotBuilder(
                 RegionId = a.RegionId,
                 Disease = a.Disease,
                 Title = a.Title,
+                Summary = a.Summary,
                 Severity = a.Severity,
                 CaseCount = a.CaseCount,
+                SourceAttribution = a.SourceAttribution,
                 SourceDate = a.SourceDate
             })
             .ToListAsync(ct);
@@ -327,8 +350,10 @@ public sealed class RegionSnapshotBuilder(
         public Guid RegionId { get; init; }
         public string Disease { get; init; } = string.Empty;
         public string Title { get; init; } = string.Empty;
+        public string Summary { get; init; } = string.Empty;
         public AlertSeverity Severity { get; init; }
         public int CaseCount { get; init; }
+        public string SourceAttribution { get; init; } = string.Empty;
         public DateTime SourceDate { get; init; }
     }
 

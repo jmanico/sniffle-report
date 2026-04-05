@@ -35,6 +35,8 @@ services:
       VITE_ENABLE_PWA: "false"
     ports:
       - "5173:5173"
+    volumes:
+      - ./static-site:/usr/share/nginx/html:ro
     depends_on:
       - api
 

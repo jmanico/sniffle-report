@@ -8,6 +8,7 @@ import {
   snapshotResourceCountsSchema,
   snapshotPreventionSummarySchema,
   snapshotNewsSummarySchema,
+  resourceTypeSchema,
 } from '../api/types'
 
 // --- State index schema ---
@@ -69,6 +70,17 @@ const staticDashboardSchema = z.object({
   topAlerts: z.array(snapshotAlertSummarySchema),
   trendHighlights: z.array(snapshotTrendHighlightSchema),
   resourceCounts: snapshotResourceCountsSchema,
+  nearbyResources: z.array(
+    z.object({
+      id: z.string().uuid(),
+      regionId: z.string().uuid(),
+      name: z.string().min(1),
+      type: resourceTypeSchema,
+      address: z.string().min(1),
+      phone: z.string().nullable(),
+      website: z.string().nullable(),
+    }),
+  ),
   preventionHighlights: z.array(snapshotPreventionSummarySchema),
   newsHighlights: z.array(snapshotNewsSummarySchema),
 })
