@@ -11,6 +11,7 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
     private Dictionary<string, Guid>? _stateNameIndex;
     private Dictionary<string, Guid>? _stateCodeIndex;
     private Dictionary<string, Guid>? _countyIndex;
+    private Dictionary<string, Guid>? _normalizedCountyIndex;
     private Guid? _nationalRegionId;
 
     public async Task<Guid?> ResolveRegionIdAsync(string? jurisdictionName, CancellationToken ct)
@@ -35,6 +36,11 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
         if (_countyIndex!.TryGetValue(normalized.ToUpperInvariant(), out var countyId))
             return countyId;
 
+        // 4. Fuzzy fallback: try common naming variations
+        var fuzzyMatch = TryFuzzyCountyMatch(normalized);
+        if (fuzzyMatch.HasValue)
+            return fuzzyMatch.Value;
+
         logger.LogWarning("Could not map jurisdiction {JurisdictionName} to any region", jurisdictionName);
         return null;
     }
@@ -44,7 +50,47 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
         _stateNameIndex = null;
         _stateCodeIndex = null;
         _countyIndex = null;
+        _normalizedCountyIndex = null;
         _nationalRegionId = null;
+    }
+
+    private Guid? TryFuzzyCountyMatch(string input)
+    {
+        // Try without spaces: "Du Page County" -> "DuPageCounty"
+        var noSpaces = input.Replace(" ", "");
+        if (_normalizedCountyIndex!.TryGetValue(noSpaces, out var id))
+            return id;
+
+        // Alaska: "Anchorage County" -> "Anchorage Municipality"
+        // Try replacing "County" with "Borough" or "Municipality"
+        if (input.Contains("County", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var alt in new[] { "Borough", "Municipality", "Census Area", "City and Borough" })
+            {
+                var variant = input.Replace("County", alt, StringComparison.OrdinalIgnoreCase);
+                if (_countyIndex!.TryGetValue(variant, out var altId))
+                    return altId;
+            }
+        }
+
+        // Virginia independent cities: "Charlottesville City County" -> try as "Charlottesville city"
+        if (input.Contains("City County", StringComparison.OrdinalIgnoreCase))
+        {
+            var asCity = input.Replace("City County", "city", StringComparison.OrdinalIgnoreCase);
+            if (_countyIndex!.TryGetValue(asCity, out var cityId))
+                return cityId;
+        }
+
+        // Try stripping " County" suffix and matching just the name + state
+        // e.g., "Carson City County, Nevada" -> "Carson City, Nevada"
+        if (input.Contains(" County,", StringComparison.OrdinalIgnoreCase))
+        {
+            var withoutCounty = input.Replace(" County,", ",", StringComparison.OrdinalIgnoreCase);
+            if (_countyIndex!.TryGetValue(withoutCounty, out var stripId))
+                return stripId;
+        }
+
+        return null;
     }
 
     private async Task EnsureCacheLoadedAsync(CancellationToken ct)
@@ -62,34 +108,52 @@ public sealed class RegionMappingService(AppDbContext dbContext, ILogger<RegionM
         _countyIndex = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         _nationalRegionId = null;
 
-        foreach (var r in regions)
+        // First pass: build state indexes so we can resolve state names for counties
+        var stateNameByCode = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in regions.Where(r => r.Type == RegionType.State))
         {
             var nameKey = r.Name.ToUpperInvariant();
             var stateKey = r.State.ToUpperInvariant();
 
-            // Check for the national-level region
             if (r.Name.Equals(NationalRegionName, StringComparison.OrdinalIgnoreCase))
-            {
                 _nationalRegionId = r.Id;
-            }
 
-            switch (r.Type)
+            _stateNameIndex.TryAdd(nameKey, r.Id);
+            _stateCodeIndex.TryAdd(stateKey, r.Id);
+            stateNameByCode.TryAdd(stateKey, nameKey);
+        }
+
+        // Second pass: counties and metros
+        foreach (var r in regions.Where(r => r.Type is RegionType.County or RegionType.Metro))
+        {
+            var nameKey = r.Name.ToUpperInvariant();
+            var stateKey = r.State.ToUpperInvariant();
+
+            if (r.Type == RegionType.County)
             {
-                case RegionType.State:
-                    _stateNameIndex.TryAdd(nameKey, r.Id);
-                    _stateCodeIndex.TryAdd(stateKey, r.Id);
-                    break;
+                // Index as "County Name", "County Name, StateCode", and "County Name, StateName"
+                _countyIndex.TryAdd(nameKey, r.Id);
+                _countyIndex.TryAdd($"{nameKey}, {stateKey}", r.Id);
 
-                case RegionType.County:
-                    // Index as "County Name" and "County Name, State"
-                    _countyIndex.TryAdd(nameKey, r.Id);
-                    _countyIndex.TryAdd($"{nameKey}, {stateKey}", r.Id);
-                    break;
-
-                case RegionType.Metro:
-                    _countyIndex.TryAdd(nameKey, r.Id);
-                    break;
+                if (stateNameByCode.TryGetValue(stateKey, out var stateName))
+                {
+                    _countyIndex.TryAdd($"{nameKey}, {stateName}", r.Id);
+                }
             }
+            else
+            {
+                _countyIndex.TryAdd(nameKey, r.Id);
+            }
+        }
+
+        // Build normalized alias index for fuzzy matching
+        _normalizedCountyIndex = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, id) in _countyIndex)
+        {
+            // Index without spaces for "Du Page" -> "DuPage", "De Kalb" -> "DeKalb"
+            var noSpaces = key.Replace(" ", "");
+            _normalizedCountyIndex.TryAdd(noSpaces, id);
         }
 
         if (_nationalRegionId is null)

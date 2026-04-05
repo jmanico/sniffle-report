@@ -53,9 +53,22 @@ public sealed class IngestionService(
 
             regionMapping.InvalidateCache();
 
+            // Deduplicate records within the batch by external source ID
+            var deduplicatedRecords = result.Records
+                .GroupBy(r => r.ExternalSourceId)
+                .Select(g => g.First())
+                .ToList();
+
+            if (deduplicatedRecords.Count < result.Records.Count)
+            {
+                logger.LogInformation(
+                    "Deduplicated {Original} records to {Unique} unique external IDs for {FeedName}",
+                    result.Records.Count, deduplicatedRecords.Count, source.Name);
+            }
+
             var affectedRegionDiseases = new HashSet<(Guid RegionId, string Disease)>();
 
-            foreach (var record in result.Records)
+            foreach (var record in deduplicatedRecords)
             {
                 await ProcessRecordAsync(source, record, syncLog, affectedRegionDiseases, ct);
             }
@@ -286,7 +299,7 @@ public sealed class IngestionService(
             Severity = AlertSeverity.Low,
             CaseCount = 0,
             SourceAttribution = source.Name,
-            SourceDate = DateTime.UtcNow,
+            SourceDate = DateTime.UnixEpoch, // Set to epoch so the first trend data point always updates the alert
             Status = source.AutoPublish ? AlertStatus.Published : AlertStatus.Draft
         };
         dbContext.HealthAlerts.Add(alert);

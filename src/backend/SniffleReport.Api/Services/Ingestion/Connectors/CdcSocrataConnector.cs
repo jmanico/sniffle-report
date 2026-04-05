@@ -171,16 +171,40 @@ public sealed class CdcSocrataConnector(
         var dataDate = TryParseDate(dateStr);
         var percentChange = TryParseCount(ptcStr);
 
-        // Use percentile as a proxy metric (0-100 scale) if available
-        var metricValue = percentChange;
-        if (metricValue is null || metricValue == -99) // -99 means insufficient data
+        // Use percentile (0-100 scale) as the primary metric for dashboard display.
+        // Percent-change is informational but not meaningful as a "case count".
+        var percentile = TryParseCount(percentileStr);
+        var metricValue = (percentile is not null && percentile >= 0) ? percentile : null;
+
+        // Fall back to percent change if percentile is unavailable
+        if (metricValue is null && percentChange is not null && percentChange != -99)
         {
-            var percentile = TryParseCount(percentileStr);
-            metricValue = percentile;
+            metricValue = Math.Max(0, percentChange.Value);
         }
 
         var countyLabel = county is not null ? $":{county}" : "";
-        var externalId = $"wastewater:{source.Url}:{jurisdiction}{countyLabel}:{dataDate?.ToString("yyyy-MM-dd") ?? "nodate"}";
+        var siteId = GetStringField(row, "key_plot_id") ?? GetStringField(row, "wwtp_id") ?? "0";
+        var externalId = $"wastewater:{source.Url}:{jurisdiction}{countyLabel}:{dataDate?.ToString("yyyy-MM-dd") ?? "nodate"}:{siteId}";
+
+        // Map to county if county_names is available, otherwise fall back to state.
+        // CDC county_names may be comma-separated (multi-county sites) — use the first.
+        // CDC uses bare names like "Honolulu", not "Honolulu County".
+        var mappedJurisdiction = jurisdiction;
+        if (county is not null)
+        {
+            var primaryCounty = county.Contains(',')
+                ? county.Split(',')[0].Trim()
+                : county.Trim();
+
+            var hasKnownSuffix = primaryCounty.EndsWith("County", StringComparison.OrdinalIgnoreCase)
+                || primaryCounty.EndsWith("Parish", StringComparison.OrdinalIgnoreCase)
+                || primaryCounty.EndsWith("Borough", StringComparison.OrdinalIgnoreCase)
+                || primaryCounty.EndsWith("Municipality", StringComparison.OrdinalIgnoreCase)
+                || primaryCounty.EndsWith("City", StringComparison.OrdinalIgnoreCase);
+
+            var countySuffix = hasKnownSuffix ? "" : " County";
+            mappedJurisdiction = $"{primaryCounty}{countySuffix}, {jurisdiction}";
+        }
 
         return new NormalizedFeedRecord
         {
@@ -188,14 +212,12 @@ public sealed class CdcSocrataConnector(
             RawPayloadJson = row.GetRawText(),
             RecordType = NormalizedRecordType.TrendDataPoint,
             Disease = "COVID-19 (Wastewater)",
-            JurisdictionName = jurisdiction,
+            JurisdictionName = mappedJurisdiction,
             CaseCount = metricValue,
             DataDate = dataDate,
             SourceDate = DateTime.UtcNow,
             SourceAttribution = "CDC NWSS Wastewater Surveillance",
-            Summary = percentChange is not null
-                ? $"15-day percent change: {percentChange}%"
-                : null
+            Summary = BuildWastewaterSummary(percentile, percentChange)
         };
     }
 
@@ -238,6 +260,16 @@ public sealed class CdcSocrataConnector(
             SourceDate = DateTime.UtcNow,
             SourceAttribution = $"CDC via data.cdc.gov/{source.Url}"
         };
+    }
+
+    private static string? BuildWastewaterSummary(int? percentile, int? percentChange)
+    {
+        var parts = new List<string>();
+        if (percentile is not null)
+            parts.Add($"Wastewater level: {percentile}th percentile");
+        if (percentChange is not null && percentChange != -99)
+            parts.Add($"15-day change: {percentChange}%");
+        return parts.Count > 0 ? string.Join(". ", parts) : null;
     }
 
     private static string? GetStringField(JsonElement row, params string[] fieldNames)

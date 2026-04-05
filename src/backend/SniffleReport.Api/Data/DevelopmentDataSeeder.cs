@@ -1,6 +1,12 @@
+using System.Reflection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using SniffleReport.Api.Models.Configuration;
 using SniffleReport.Api.Models.Entities;
 using SniffleReport.Api.Models.Enums;
+using SniffleReport.Api.Services;
+using SniffleReport.Api.Services.Snapshots;
 
 namespace SniffleReport.Api.Data;
 
@@ -15,17 +21,20 @@ public static class DevelopmentDataSeeder
 
         await context.Database.MigrateAsync(cancellationToken);
 
-        await SeedRegionsAsync(context, cancellationToken);
+        await SeedRegionsAsync(context, logger, cancellationToken);
         await SeedHealthAlertsAsync(context, cancellationToken);
         await SeedDiseaseTrendsAsync(context, cancellationToken);
         await SeedPreventionGuidesAsync(context, cancellationToken);
         await SeedLocalResourcesAsync(context, cancellationToken);
         await SeedFeedSourcesAsync(context, cancellationToken);
 
+        // Build initial region snapshots so the dashboard is ready immediately
+        await BuildInitialSnapshotsAsync(scope.ServiceProvider, context, logger, cancellationToken);
+
         logger.LogInformation("Development seed completed for Sniffle Report.");
     }
 
-    private static async Task SeedRegionsAsync(AppDbContext context, CancellationToken cancellationToken)
+    private static async Task SeedRegionsAsync(AppDbContext context, ILogger logger, CancellationToken cancellationToken)
     {
         // National-level region for feeds with no jurisdiction (RSS, national data)
         await UpsertRegionAsync(
@@ -57,18 +66,43 @@ public static class DevelopmentDataSeeder
             .Where(region => region.Type == RegionType.State)
             .ToDictionaryAsync(region => region.State, cancellationToken);
 
-        foreach (var county in GetCounties())
+        var countyData = LoadCountyDataFromEmbeddedResource();
+        logger.LogInformation("Loading {CountyCount} US counties from embedded seed data...", countyData.Count);
+
+        // Bulk-load existing counties to avoid 3,000+ individual queries
+        var existingCounties = await context.Regions
+            .Where(r => r.Type == RegionType.County)
+            .ToDictionaryAsync(r => (r.Name, r.State), cancellationToken);
+
+        var added = 0;
+        foreach (var county in countyData)
         {
-            await UpsertRegionAsync(
-                context,
-                name: county.Name,
-                type: RegionType.County,
-                state: county.StateCode,
-                parentId: stateLookup[county.StateCode].Id,
-                latitude: county.Latitude,
-                longitude: county.Longitude,
-                cancellationToken);
+            if (!stateLookup.TryGetValue(county.State, out var parentState))
+                continue;
+
+            var key = (county.Name, county.State);
+            if (existingCounties.TryGetValue(key, out var existing))
+            {
+                existing.ParentId = parentState.Id;
+                existing.Latitude = county.Latitude;
+                existing.Longitude = county.Longitude;
+            }
+            else
+            {
+                context.Regions.Add(new Region
+                {
+                    Name = county.Name,
+                    Type = RegionType.County,
+                    State = county.State,
+                    ParentId = parentState.Id,
+                    Latitude = county.Latitude,
+                    Longitude = county.Longitude
+                });
+                added++;
+            }
         }
+
+        logger.LogInformation("Added {AddedCount} new counties, updated {UpdatedCount} existing.", added, existingCounties.Count);
 
         foreach (var metro in GetMetros())
         {
@@ -113,6 +147,7 @@ public static class DevelopmentDataSeeder
     {
         var alertLookup = await context.HealthAlerts
             .IgnoreQueryFilters()
+            .Where(alert => alert.SourceAttribution == SampleSourceAttribution)
             .ToDictionaryAsync(alert => alert.Title, cancellationToken);
 
         foreach (var seed in GetTrendSeeds(alertLookup))
@@ -201,10 +236,42 @@ public static class DevelopmentDataSeeder
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    private static async Task BuildInitialSnapshotsAsync(
+        IServiceProvider serviceProvider,
+        AppDbContext context,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var regionCount = await context.Regions.CountAsync(cancellationToken);
+        var snapshotCount = await context.RegionSnapshots.CountAsync(cancellationToken);
+
+        if (snapshotCount >= regionCount && snapshotCount > 0)
+        {
+            logger.LogInformation("Region snapshots are up to date ({SnapshotCount} snapshots for {RegionCount} regions).", snapshotCount, regionCount);
+            return;
+        }
+
+        var hierarchyService = serviceProvider.GetRequiredService<RegionHierarchyService>();
+        var snapshotOptions = serviceProvider.GetRequiredService<IOptions<SnapshotOptions>>();
+        var builderLogger = serviceProvider.GetRequiredService<ILogger<RegionSnapshotBuilder>>();
+        var builder = new RegionSnapshotBuilder(context, hierarchyService, snapshotOptions, builderLogger);
+
+        logger.LogInformation("Building initial region snapshots...");
+        await builder.RebuildAllAsync(cancellationToken);
+        logger.LogInformation("Initial region snapshots built successfully.");
+    }
+
     private static async Task<Dictionary<string, Region>> GetRegionLookupAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        return await context.Regions
-            .ToDictionaryAsync(region => region.Name, cancellationToken);
+        var regions = await context.Regions.ToListAsync(cancellationToken);
+        var lookup = new Dictionary<string, Region>();
+
+        foreach (var region in regions)
+        {
+            lookup.TryAdd(region.Name, region);
+        }
+
+        return lookup;
     }
 
     private static async Task UpsertRegionAsync(
@@ -533,25 +600,34 @@ public static class DevelopmentDataSeeder
             ("WA", "Washington", 47.400902, -121.490494),
             ("WV", "West Virginia", 38.491226, -80.954453),
             ("WI", "Wisconsin", 44.268543, -89.616508),
-            ("WY", "Wyoming", 42.755966, -107.30249)
+            ("WY", "Wyoming", 42.755966, -107.30249),
+            ("DC", "District of Columbia", 38.904149, -77.017094),
+            ("PR", "Puerto Rico", 18.220833, -66.590149),
+            ("GU", "Guam", 13.444304, 144.793731),
+            ("VI", "U.S. Virgin Islands", 18.335765, -64.896335),
+            ("AS", "American Samoa", -14.270972, -170.132217),
+            ("MP", "Northern Mariana Islands", 15.0979, 145.6739)
         ];
     }
 
-    private static IEnumerable<(string Name, string StateCode, double Latitude, double Longitude)> GetCounties()
+    private static IReadOnlyList<CountySeedEntry> LoadCountyDataFromEmbeddedResource()
     {
-        return
-        [
-            ("Travis County", "TX", 30.307982, -97.893803),
-            ("Cook County", "IL", 41.737658, -87.697554),
-            ("Los Angeles County", "CA", 34.052235, -118.243683),
-            ("King County", "WA", 47.548034, -121.983604),
-            ("Miami-Dade County", "FL", 25.761681, -80.191788),
-            ("Fulton County", "GA", 33.8034, -84.3963),
-            ("Maricopa County", "AZ", 33.2918, -112.4291),
-            ("Denver County", "CO", 39.7392, -104.9903),
-            ("Suffolk County", "MA", 42.3601, -71.0589),
-            ("Multnomah County", "OR", 45.514, -122.674)
-        ];
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = assembly.GetManifestResourceNames()
+            .Single(name => name.EndsWith("us-counties.json", StringComparison.OrdinalIgnoreCase));
+
+        using var stream = assembly.GetManifestResourceStream(resourceName)!;
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        return JsonSerializer.Deserialize<List<CountySeedEntry>>(stream, options) ?? [];
+    }
+
+    private sealed class CountySeedEntry
+    {
+        public string Fips { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string State { get; set; } = string.Empty;
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
     }
 
     private static IEnumerable<(string Name, string StateCode, double Latitude, double Longitude)> GetMetros()
