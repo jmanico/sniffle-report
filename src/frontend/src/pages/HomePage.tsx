@@ -19,7 +19,7 @@ export function HomePage() {
             Updated automatically from 12 public data feeds.
           </p>
           <div className="page-badges">
-            <span className="page-badge">{states.length} states and territories</span>
+            <span className="page-badge">{states.filter((s) => s.countyCount > 0).length} states</span>
             <span className="page-badge">
               {states.reduce((sum, s) => sum + s.countyCount, 0).toLocaleString()} counties
             </span>
@@ -39,7 +39,7 @@ export function HomePage() {
             </div>
           ) : (
             <div className="state-grid">
-              {states.map((state) => (
+              {states.filter((s) => s.countyCount > 0).map((state) => (
                 <Link
                   className="state-card"
                   key={state.code}
