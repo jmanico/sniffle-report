@@ -19,7 +19,7 @@ export function HomePage() {
             Updated automatically from 12 public data feeds.
           </p>
           <div className="page-badges">
-            <span className="page-badge">{states.filter((s) => s.countyCount > 0).length} states</span>
+            <span className="page-badge">50 states + DC</span>
             <span className="page-badge">
               {states.reduce((sum, s) => sum + s.countyCount, 0).toLocaleString()} counties
             </span>
