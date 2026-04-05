@@ -374,17 +374,8 @@ public static class DevelopmentDataSeeder
                 LastSyncStatus = FeedSyncStatus.NeverRun
             },
             // --- New Socrata datasets ---
-            new FeedSource
-            {
-                Name = "CDC COVID-19 Vaccination Distribution",
-                Type = FeedSourceType.CdcSocrata,
-                Url = "unsk-b7fc",
-                SoqlQuery = "SELECT date, location, administered, admin_per_100k WHERE date > '2025-01-01' ORDER BY date DESC LIMIT 5000",
-                PollingInterval = TimeSpan.FromHours(24),
-                IsEnabled = true,
-                AutoPublish = true,
-                LastSyncStatus = FeedSyncStatus.NeverRun
-            },
+            // CDC COVID-19 Vaccination Distribution (unsk-b7fc) — archived dataset, last data from 2023. Disabled.
+
             new FeedSource
             {
                 Name = "CDC PLACES County Health",
