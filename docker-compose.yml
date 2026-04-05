@@ -15,7 +15,7 @@ services:
       context: ./src/backend
       dockerfile: Dockerfile
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:5000
@@ -28,9 +28,11 @@ services:
       context: ./src/frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:5000/api/v1
+        VITE_API_URL: http://localhost:5001/api/v1
+        VITE_ENABLE_PWA: "false"
     environment:
-      VITE_API_URL: http://localhost:5000/api/v1
+      VITE_API_URL: http://localhost:5001/api/v1
+      VITE_ENABLE_PWA: "false"
     ports:
       - "5173:5173"
     depends_on:

@@ -9,8 +9,10 @@ WORKDIR /app
 
 COPY . .
 
-ARG VITE_API_URL=http://localhost:5000/api/v1
+ARG VITE_API_URL=http://localhost:5001/api/v1
+ARG VITE_ENABLE_PWA=false
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_ENABLE_PWA=$VITE_ENABLE_PWA
 
 RUN npm run build
 

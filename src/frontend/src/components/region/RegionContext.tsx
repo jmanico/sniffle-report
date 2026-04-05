@@ -4,6 +4,12 @@ import { useParams } from 'react-router-dom'
 import { useRegionById } from '../../hooks/useRegions'
 import { RegionContext, type RegionContextValue } from './region-context'
 
+function formatRegionLabel(region: NonNullable<ReturnType<typeof useRegionById>['data']>) {
+  return region.type === 'State'
+    ? region.name
+    : `${region.name}, ${region.state}`
+}
+
 export function RegionProvider({ children }: { children: ReactNode }) {
   const { regionId } = useParams()
 
@@ -13,7 +19,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
 
   const regionQuery = useRegionById(regionId)
   const regionLabel = regionQuery.data
-    ? `${regionQuery.data.name}, ${regionQuery.data.state}`
+    ? formatRegionLabel(regionQuery.data)
     : regionId
 
   const value: RegionContextValue = {

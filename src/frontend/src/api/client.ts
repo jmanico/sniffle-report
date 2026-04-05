@@ -3,7 +3,7 @@ import { type ZodType } from 'zod'
 
 import type { PaginatedResult, ProblemDetails } from './types'
 
-const ApiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api/v1'
+const ApiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5001/api/v1'
 const LoginRedirectPath = '/admin'
 
 type RequestConfigWithRetry = AxiosRequestConfig & { _retry?: boolean }
