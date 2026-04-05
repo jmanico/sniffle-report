@@ -31,6 +31,28 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
             .AsNoTracking()
             .ToDictionaryAsync(s => s.RegionId, ct);
 
+        var resources = await dbContext.LocalResources
+            .AsNoTracking()
+            .Select(r => new ResourceExportData
+            {
+                Id = r.Id,
+                RegionId = r.RegionId,
+                Name = r.Name,
+                Type = r.Type.ToString(),
+                Address = r.Address,
+                Phone = r.Phone,
+                Website = r.Website
+            })
+            .ToListAsync(ct);
+
+        var resourcesByRegion = resources
+            .GroupBy(r => r.RegionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var childrenByParent = regions
+            .Where(r => r.ParentId.HasValue)
+            .GroupBy(r => r.ParentId!.Value)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.Id).ToList());
+
         logger.LogInformation("Loaded {RegionCount} regions and {SnapshotCount} snapshots", regions.Count, snapshots.Count);
 
         // 2. Export states.json — index of all states
@@ -113,6 +135,14 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
             if (!snapshots.TryGetValue(region.Id, out var snapshot))
                 continue;
 
+            var descendantIds = GetDescendantIds(region.Id, childrenByParent);
+            var nearbyResources = descendantIds
+                .SelectMany(id => resourcesByRegion.TryGetValue(id, out var items) ? items : [])
+                .OrderBy(r => GetResourceSortOrder(r.Type))
+                .ThenBy(r => r.Name)
+                .Take(6)
+                .ToList();
+
             var dashboard = new
             {
                 regionId = region.Id,
@@ -127,6 +157,7 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
                 topAlerts = JsonSerializer.Deserialize<List<SnapshotAlertSummary>>(snapshot.TopAlertsJson, JsonOptions) ?? [],
                 trendHighlights = JsonSerializer.Deserialize<List<SnapshotTrendHighlight>>(snapshot.TrendHighlightsJson, JsonOptions) ?? [],
                 resourceCounts = JsonSerializer.Deserialize<SnapshotResourceCounts>(snapshot.ResourceCountsJson, JsonOptions) ?? new(),
+                nearbyResources,
                 preventionHighlights = JsonSerializer.Deserialize<List<SnapshotPreventionSummary>>(snapshot.PreventionHighlightsJson, JsonOptions) ?? [],
                 newsHighlights = JsonSerializer.Deserialize<List<SnapshotNewsSummary>>(snapshot.NewsHighlightsJson, JsonOptions) ?? []
             };
@@ -210,10 +241,54 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
         var counts = JsonSerializer.Deserialize<SnapshotResourceCounts>(snapshot.ResourceCountsJson, JsonOptions);
         return counts?.Total ?? 0;
     }
+
+    private static HashSet<Guid> GetDescendantIds(Guid regionId, Dictionary<Guid, List<Guid>> childrenByParent)
+    {
+        var result = new HashSet<Guid> { regionId };
+        var stack = new Stack<Guid>();
+        stack.Push(regionId);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (!childrenByParent.TryGetValue(current, out var children))
+                continue;
+
+            foreach (var child in children)
+            {
+                if (result.Add(child))
+                {
+                    stack.Push(child);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static int GetResourceSortOrder(string resourceType) => resourceType switch
+    {
+        "Pharmacy" => 0,
+        "Clinic" => 1,
+        "Hospital" => 2,
+        "VaccinationSite" => 3,
+        _ => 4
+    };
 }
 
 public sealed class ExportResult
 {
     public int FilesWritten { get; init; }
     public string OutputDirectory { get; init; } = string.Empty;
+}
+
+file sealed class ResourceExportData
+{
+    public Guid Id { get; init; }
+    public Guid RegionId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string Address { get; init; } = string.Empty;
+    public string? Phone { get; init; }
+    public string? Website { get; init; }
 }

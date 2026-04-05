@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { SniffleReportLogo } from '../components/layout/SniffleReportLogo'
 import { useStates } from '../hooks/useStaticData'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
@@ -11,7 +12,13 @@ export function HomePage() {
     <section className="page-frame">
       <div className="page-stack">
         <article className="page-hero">
-          <span className="page-kicker">Sniffle Report</span>
+          <div className="home-hero-brand">
+            <SniffleReportLogo />
+            <div className="home-hero-brand__copy">
+              <span className="page-kicker">Sniffle Report</span>
+              <span className="home-hero-brand__title">Regional health intelligence</span>
+            </div>
+          </div>
           <h1>Community health data for every US county</h1>
           <p>
             Regional health trends, disease surveillance, local clinics and pharmacies,

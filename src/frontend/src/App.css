@@ -148,6 +148,34 @@
   margin-bottom: 0.5rem;
 }
 
+.home-hero-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.home-hero-brand .brand-mark {
+  width: 4rem;
+  height: 4rem;
+}
+
+.home-hero-brand__copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-hero-brand__copy .page-kicker {
+  margin-bottom: 0.2rem;
+}
+
+.home-hero-brand__title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
 .page-hero h1 {
   font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 800;
@@ -333,6 +361,42 @@
   margin: 0;
 }
 
+.dashboard-resource-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-resource-item {
+  padding: 0.95rem 1rem;
+  background: var(--paper-deep);
+  border-radius: var(--radius-md);
+}
+
+.dashboard-resource-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.dashboard-resource-item__header strong {
+  font-size: 0.9375rem;
+}
+
+.dashboard-resource-item p {
+  margin: 0 0 0.45rem;
+  color: var(--ink-soft);
+}
+
+.dashboard-resource-item__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 /* ── Alert Cards (Dashboard) ──────────────────────── */
 
 .dashboard-alert-list {
@@ -370,10 +434,29 @@
   color: var(--ink-soft);
 }
 
+.dashboard-alert-card__updates {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .dashboard-alert-card strong {
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.3;
+}
+
+.dashboard-alert-card__summary {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.dashboard-alert-card__trend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .dashboard-alert-card__meta {
@@ -668,12 +751,101 @@
   font-variant-numeric: tabular-nums;
 }
 
+.state-region-row--with-alerts {
+  background:
+    linear-gradient(90deg, rgba(254, 215, 170, 0.4), rgba(255, 247, 237, 0.2));
+}
+
+.state-region-row--with-alerts td:first-child {
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
 .status-table--regions tbody tr:hover {
   background: var(--paper-deep);
 }
 
 .status-table--regions td a {
   font-weight: 500;
+}
+
+.state-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.state-alert-pill--quiet {
+  background: var(--paper-deep);
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.statewide-pattern-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.875rem;
+}
+
+.statewide-pattern-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--paper-deep);
+}
+
+.statewide-pattern-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.statewide-pattern-card p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.statewide-pattern-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.statewide-pattern-card__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.statewide-pattern-card__example {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: #fff3e8;
+  color: #9a3412;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.statewide-pattern-card__example--more {
+  background: var(--paper);
+  color: var(--ink-soft);
+}
+
+.statewide-pattern-card__meta {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
 }
 
 .status-badge {
@@ -808,6 +980,20 @@
 
   .page-hero {
     padding: 1.5rem 0 1rem;
+  }
+
+  .home-hero-brand {
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .home-hero-brand .brand-mark {
+    width: 3.25rem;
+    height: 3.25rem;
+  }
+
+  .home-hero-brand__title {
+    font-size: 0.9375rem;
   }
 
   .dashboard-grid {

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT_DIR="$SCRIPT_DIR/static-site"
+TMP_OUTPUT_DIR="$SCRIPT_DIR/static-site.next"
 
 echo "=== Sniffle Report Static Site Export ==="
 echo ""
@@ -40,10 +41,14 @@ npm run build --silent
 
 # 5. Assemble static site
 echo "[5/5] Assembling static site..."
-rm -rf "$OUTPUT_DIR"
+rm -rf "$TMP_OUTPUT_DIR"
+mkdir -p "$TMP_OUTPUT_DIR"
+cp -r dist/* "$TMP_OUTPUT_DIR/"
+cp -r "$SCRIPT_DIR/static-export/data" "$TMP_OUTPUT_DIR/data"
+
 mkdir -p "$OUTPUT_DIR"
-cp -r dist/* "$OUTPUT_DIR/"
-cp -r "$SCRIPT_DIR/static-export/data" "$OUTPUT_DIR/data"
+rsync -a --delete "$TMP_OUTPUT_DIR"/ "$OUTPUT_DIR"/
+rm -rf "$TMP_OUTPUT_DIR"
 
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" | cut -f1)
 echo ""

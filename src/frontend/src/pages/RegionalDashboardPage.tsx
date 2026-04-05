@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 
-import type { SnapshotTrendHighlight } from '../api/types'
+import type { RegionDashboard, SnapshotTrendHighlight } from '../api/types'
 import { FactCheckBadge } from '../components/news/FactCheckBadge'
 import { SeverityBadge } from '../components/dashboard/SeverityBadge'
 import { useStaticDashboard } from '../hooks/useStaticData'
@@ -21,13 +21,144 @@ function formatDate(date: string) {
   }).format(new Date(date))
 }
 
+function formatDateRange(startDate: string, endDate: string) {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear()
+  const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth()
+
+  if (sameMonth) {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+    }).format(start) + `-${end.getUTCDate()}, ${end.getUTCFullYear()}`
+  }
+
+  if (sameYear) {
+    return `${new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+    }).format(start)}-${new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+    }).format(end)}, ${end.getUTCFullYear()}`
+  }
+
+  return `${formatDate(startDate)}-${formatDate(endDate)}`
+}
+
 function formatWowChange(highlight: SnapshotTrendHighlight) {
   const sign = highlight.wowChangePercent >= 0 ? '+' : ''
   return `${sign}${highlight.wowChangePercent.toFixed(1)}%`
 }
 
-function buildRegionPath(regionId: string, segment?: string) {
-  return segment ? `/region/${regionId}/${segment}` : `/region/${regionId}`
+function formatAlertWowChange(wowChangePercent: number) {
+  const sign = wowChangePercent >= 0 ? '+' : ''
+  return `${sign}${wowChangePercent.toFixed(1)}%`
+}
+
+function buildAlertSummary(alert: {
+  summary: string
+  caseCount: number
+  disease: string
+  severity: string
+}) {
+  if (alert.summary.trim()) {
+    return alert.summary
+  }
+
+  return `${alert.caseCount} reported case${alert.caseCount === 1 ? '' : 's'} for ${alert.disease}. Severity is ${alert.severity.toLowerCase()}.`
+}
+
+function getSafeTelLink(phone: string | null) {
+  if (!phone) {
+    return null
+  }
+
+  const sanitized = phone.replace(/[^\d+]/g, '')
+  return sanitized ? validateAndSanitizeUrl(`tel:${sanitized}`) : null
+}
+
+type DashboardAlert = RegionDashboard['topAlerts'][number]
+
+type DisplayAlert = DashboardAlert & {
+  latestSourceDate: string
+  earliestSourceDate: string
+  occurrenceCount: number
+}
+
+function createAlertGroupKey(alert: DashboardAlert) {
+  return [
+    alert.disease.trim().toLowerCase(),
+    alert.title.trim().toLowerCase(),
+    alert.summary.trim().toLowerCase(),
+    alert.severity.trim().toLowerCase(),
+    alert.caseCount,
+    alert.sourceAttribution.trim().toLowerCase(),
+  ].join('::')
+}
+
+function dedupeAlerts(alerts: DashboardAlert[]) {
+  const groupedAlerts = new Map<string, DisplayAlert>()
+
+  alerts.forEach((alert) => {
+    const key = createAlertGroupKey(alert)
+    const existing = groupedAlerts.get(key)
+
+    if (!existing) {
+      groupedAlerts.set(key, {
+        ...alert,
+        latestSourceDate: alert.sourceDate,
+        earliestSourceDate: alert.sourceDate,
+        occurrenceCount: 1,
+      })
+      return
+    }
+
+    const sourceTime = new Date(alert.sourceDate).getTime()
+    const latestTime = new Date(existing.latestSourceDate).getTime()
+    const earliestTime = new Date(existing.earliestSourceDate).getTime()
+
+    existing.occurrenceCount += 1
+
+    if (sourceTime > latestTime) {
+      existing.latestSourceDate = alert.sourceDate
+      existing.sourceDate = alert.sourceDate
+      existing.alertId = alert.alertId
+      existing.previousCaseCount = alert.previousCaseCount
+      existing.wowChangePercent = alert.wowChangePercent
+      existing.previousSourceDate = alert.previousSourceDate
+    }
+
+    if (sourceTime < earliestTime) {
+      existing.earliestSourceDate = alert.sourceDate
+    }
+  })
+
+  return [...groupedAlerts.values()]
+}
+
+function buildAlertDateLabel(alert: DisplayAlert) {
+  if (alert.occurrenceCount <= 1) {
+    return formatDate(alert.latestSourceDate)
+  }
+
+  return formatDateRange(alert.earliestSourceDate, alert.latestSourceDate)
+}
+
+function buildAlertOccurrencesLabel(alert: DisplayAlert) {
+  if (alert.occurrenceCount <= 1) {
+    return null
+  }
+
+  return `${alert.occurrenceCount} updates`
+}
+
+function buildDisplayAlertMeta(alert: DisplayAlert) {
+  const dateLabel = buildAlertDateLabel(alert)
+  const sourceLabel = alert.sourceAttribution.trim() ? alert.sourceAttribution : 'Snapshot date'
+
+  return `${sourceLabel} · ${dateLabel}`
 }
 
 export function RegionalDashboardPage() {
@@ -44,10 +175,12 @@ export function RegionalDashboardPage() {
   const isLoading = dashboardQuery.isLoading
   const hasError = dashboardQuery.isError
 
-  const topAlerts = [...(dashboard?.topAlerts ?? [])]
+  const topAlerts = dedupeAlerts([...(dashboard?.topAlerts ?? [])])
     .sort((left, right) => {
       const severityDiff = (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0)
       if (severityDiff !== 0) return severityDiff
+      const occurrenceDiff = right.occurrenceCount - left.occurrenceCount
+      if (occurrenceDiff !== 0) return occurrenceDiff
       return right.caseCount - left.caseCount
     })
     .slice(0, 5)
@@ -57,6 +190,7 @@ export function RegionalDashboardPage() {
     .slice(0, 3)
 
   const resourceCounts = dashboard?.resourceCounts
+  const nearbyResources = dashboard?.nearbyResources ?? []
   const resourceParts = resourceCounts
     ? [
         resourceCounts.clinic > 0 ? `${resourceCounts.clinic} clinics` : null,
@@ -68,13 +202,6 @@ export function RegionalDashboardPage() {
   const resourceSummary = resourceParts.length > 0
     ? resourceParts.join(', ')
     : 'No local resources indexed'
-
-  const dashboardLinks = [
-    { label: 'All alerts', segment: 'alerts' },
-    { label: 'Prevention guides', segment: 'prevention' },
-    { label: 'Resources', segment: 'resources' },
-    { label: 'Health news', segment: 'news' },
-  ]
 
   return (
     <section className="page-frame">
@@ -135,10 +262,19 @@ export function RegionalDashboardPage() {
                     <div className="dashboard-alert-card__row">
                       <SeverityBadge severity={alert.severity as 'Low' | 'Moderate' | 'High' | 'Critical'} />
                       <span className="dashboard-alert-card__cases">{alert.caseCount} cases</span>
+                      {buildAlertOccurrencesLabel(alert) ? (
+                        <span className="dashboard-alert-card__updates">{buildAlertOccurrencesLabel(alert)}</span>
+                      ) : null}
                     </div>
                     <strong>{alert.title}</strong>
+                    <p className="dashboard-alert-card__summary">{buildAlertSummary(alert)}</p>
+                    {alert.previousCaseCount != null && alert.wowChangePercent != null ? (
+                      <span className="dashboard-alert-card__trend">
+                        {alert.previousCaseCount} previous cases · {formatAlertWowChange(alert.wowChangePercent)} WoW
+                      </span>
+                    ) : null}
                     <span className="dashboard-alert-card__meta">
-                      {alert.disease} · {formatDate(alert.sourceDate)}
+                      {buildDisplayAlertMeta(alert)}
                     </span>
                   </article>
                 ))}
@@ -242,7 +378,7 @@ export function RegionalDashboardPage() {
             <div className="dashboard-card__header">
               <div>
                 <span className="section-kicker">Local access</span>
-                <strong>Nearby healthcare resources</strong>
+                <strong>Indexed healthcare resources</strong>
               </div>
             </div>
 
@@ -250,6 +386,33 @@ export function RegionalDashboardPage() {
               <div className="dashboard-skeleton-group" aria-hidden="true">
                 <div className="dashboard-skeleton dashboard-skeleton--line" />
                 <div className="dashboard-skeleton dashboard-skeleton--card" />
+              </div>
+            ) : nearbyResources.length ? (
+              <div className="dashboard-resource-list">
+                {nearbyResources.map((resource) => {
+                  const websiteHref = resource.website
+                    ? validateAndSanitizeUrl(resource.website)
+                    : null
+                  const phoneHref = getSafeTelLink(resource.phone)
+
+                  return (
+                    <article className="dashboard-resource-item" key={resource.id}>
+                      <div className="dashboard-resource-item__header">
+                        <strong>{resource.name}</strong>
+                        <span className="page-badge">{resource.type}</span>
+                      </div>
+                      <p>{resource.address}</p>
+                      <div className="dashboard-resource-item__links">
+                        {websiteHref && websiteHref !== '/' ? (
+                          <a href={websiteHref} rel="noreferrer" target="_blank">
+                            Website
+                          </a>
+                        ) : null}
+                        {phoneHref && phoneHref !== '/' ? <a href={phoneHref}>{resource.phone}</a> : null}
+                      </div>
+                    </article>
+                  )
+                })}
               </div>
             ) : (
               <div className="dashboard-resource-summary">
@@ -263,18 +426,28 @@ export function RegionalDashboardPage() {
         </div>
 
         <section className="page-panel dashboard-nav-panel">
-          <span className="section-kicker">Explore this region</span>
-          <strong>Jump deeper into the region-scoped views.</strong>
-          <div className="dashboard-nav-links">
-            {dashboardLinks.map((item) => (
+          <span className="section-kicker">Static snapshot</span>
+          <strong>This page is the complete published view for this region.</strong>
+          <p className="dashboard-empty">
+            Detailed subpages for alerts, prevention, resources, and news were part of the old
+            dynamic UI and are not included in the static site.
+          </p>
+          <div className="page-badges">
+            <span className="page-badge">
+              Exported {dashboard?.computedAt ? formatDate(dashboard.computedAt) : 'with the latest snapshot'}
+            </span>
+            {dashboard?.parentState ? (
               <Link
-                className="dashboard-nav-link"
-                key={item.segment}
-                to={validateAndSanitizeUrl(buildRegionPath(regionId ?? '', item.segment))}
+                className="page-badge page-badge--link"
+                to={validateAndSanitizeUrl(`/states/${dashboard.parentState}`)}
               >
-                {item.label}
+                Back to {dashboard.parentName}
               </Link>
-            ))}
+            ) : (
+              <Link className="page-badge page-badge--link" to={validateAndSanitizeUrl('/')}>
+                Back to home
+              </Link>
+            )}
           </div>
         </section>
       </div>
