@@ -188,6 +188,9 @@ public sealed class IngestionService(
             case NormalizedRecordType.NewsArticle:
                 return CreateNewsFromRecord(record, regionId, source);
 
+            case NormalizedRecordType.LocalResourceEntry:
+                return await CreateLocalResourceFromRecordAsync(record, regionId, source, ct);
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(record), $"Unknown record type: {record.RecordType}");
         }
@@ -271,6 +274,54 @@ public sealed class IngestionService(
             $"Ingested from {source.Name}"));
 
         return (nameof(NewsItem), newsItem.Id);
+    }
+
+    private async Task<(string, Guid)> CreateLocalResourceFromRecordAsync(
+        NormalizedFeedRecord record,
+        Guid regionId,
+        FeedSource source,
+        CancellationToken ct)
+    {
+        // Check if resource already exists by name + region to avoid duplicates
+        var name = record.ResourceName?.Trim() ?? "Unknown Provider";
+        var existing = await dbContext.LocalResources
+            .FirstOrDefaultAsync(r => r.RegionId == regionId && r.Name == name, ct);
+
+        if (existing is not null)
+        {
+            // Update existing resource
+            existing.Address = record.Address?.Trim() ?? existing.Address;
+            existing.Phone = record.Phone;
+            existing.Website = record.Website;
+            existing.Latitude = record.Latitude ?? existing.Latitude;
+            existing.Longitude = record.Longitude ?? existing.Longitude;
+            if (record.ResourceType.HasValue) existing.Type = record.ResourceType.Value;
+            return (nameof(LocalResource), existing.Id);
+        }
+
+        var resource = new LocalResource
+        {
+            RegionId = regionId,
+            Name = name,
+            Type = record.ResourceType ?? Models.Enums.ResourceType.Clinic,
+            Address = record.Address?.Trim() ?? string.Empty,
+            Phone = record.Phone,
+            Website = record.Website,
+            Latitude = record.Latitude,
+            Longitude = record.Longitude
+        };
+        dbContext.LocalResources.Add(resource);
+
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            _options.SystemUserId,
+            AuditLogAction.FeedIngest,
+            nameof(LocalResource),
+            resource.Id,
+            null,
+            new { resource.RegionId, resource.Name, resource.Type, FeedSource = source.Name },
+            $"Ingested from {source.Name}"));
+
+        return (nameof(LocalResource), resource.Id);
     }
 
     private async Task<HealthAlert> FindOrCreateAlertAsync(

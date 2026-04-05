@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SniffleReport.Api.Data;
 using SniffleReport.Api.Models.Enums;
+using SniffleReport.Api.Services.Snapshots;
 
 namespace SniffleReport.Api.Services.Ingestion;
 
@@ -8,6 +9,7 @@ public sealed class FeedPollingBackgroundService(
     IServiceScopeFactory scopeFactory,
     ILogger<FeedPollingBackgroundService> logger) : BackgroundService
 {
+    private bool _snapshotRebuildNeeded;
     private static readonly TimeSpan PollCheckInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan MaxBackoffInterval = TimeSpan.FromHours(24);
 
@@ -46,6 +48,7 @@ public sealed class FeedPollingBackgroundService(
             .ToListAsync(ct);
 
         var now = DateTime.UtcNow;
+        _snapshotRebuildNeeded = false;
 
         foreach (var source in enabledSources)
         {
@@ -54,6 +57,12 @@ public sealed class FeedPollingBackgroundService(
 
             // Each source gets its own scope for isolation
             await SyncSourceAsync(source.Id, ct);
+        }
+
+        // Rebuild snapshots once after all syncs if any data changed
+        if (_snapshotRebuildNeeded)
+        {
+            await RebuildSnapshotsAsync(ct);
         }
     }
 
@@ -75,10 +84,30 @@ public sealed class FeedPollingBackgroundService(
                 "Feed {FeedName} sync completed: status={Status}, created={Created}, updated={Updated}, skipped={Skipped}",
                 source.Name, syncLog.Status, syncLog.RecordsCreated,
                 syncLog.RecordsUpdated, syncLog.RecordsSkippedDuplicate);
+
+            if (syncLog.RecordsCreated > 0 || syncLog.RecordsUpdated > 0)
+            {
+                _snapshotRebuildNeeded = true;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "Failed to sync feed source {SourceId}", sourceId);
+        }
+    }
+
+    private async Task RebuildSnapshotsAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var builder = scope.ServiceProvider.GetRequiredService<RegionSnapshotBuilder>();
+            logger.LogInformation("Rebuilding region snapshots after feed sync");
+            await builder.RebuildAllAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Failed to rebuild snapshots after feed sync");
         }
     }
 

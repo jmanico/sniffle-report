@@ -60,9 +60,30 @@ builder.Services.AddHttpClient("CdcRss", client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
 });
 
+builder.Services.AddHttpClient("NpiRegistry", client =>
+{
+    client.BaseAddress = new Uri("https://npiregistry.cms.hhs.gov/api/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
+});
+builder.Services.AddHttpClient("Hrsa", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
+});
+builder.Services.AddHttpClient("OpenFda", client =>
+{
+    client.BaseAddress = new Uri("https://api.fda.gov/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SniffleReport/1.0");
+});
+
 // Feed connectors and ingestion services
 builder.Services.AddScoped<IFeedConnector, CdcSocrataConnector>();
 builder.Services.AddScoped<IFeedConnector, CdcRssConnector>();
+builder.Services.AddScoped<IFeedConnector, NpiRegistryConnector>();
+builder.Services.AddScoped<IFeedConnector, HrsaConnector>();
+builder.Services.AddScoped<IFeedConnector, OpenFdaConnector>();
 builder.Services.AddScoped<RegionMappingService>();
 builder.Services.AddScoped<AlertThresholdService>();
 builder.Services.AddScoped<IngestionService>();

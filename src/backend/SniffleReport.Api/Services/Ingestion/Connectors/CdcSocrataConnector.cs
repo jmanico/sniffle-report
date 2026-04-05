@@ -17,6 +17,9 @@ public sealed class CdcSocrataConnector(
     // Known dataset identifiers for schema-specific parsing
     private const string NndssDatasetId = "x9gk-5huc";
     private const string WastewaterDatasetId = "2ew6-ywp6";
+    private const string CovidVaxDatasetId = "unsk-b7fc";
+    private const string PlacesDatasetId = "swc5-untb";
+    private const string OverdoseDatasetId = "xkb8-kh2a";
 
     public FeedSourceType SourceType => FeedSourceType.CdcSocrata;
 
@@ -100,6 +103,9 @@ public sealed class CdcSocrataConnector(
         {
             NndssDatasetId => ParseNndssRow(row, source),
             WastewaterDatasetId => ParseWastewaterRow(row, source),
+            CovidVaxDatasetId => ParseCovidVaxRow(row, source),
+            PlacesDatasetId => ParsePlacesRow(row, source),
+            OverdoseDatasetId => ParseOverdoseRow(row, source),
             _ => ParseGenericRow(row, source)
         };
     }
@@ -260,6 +266,132 @@ public sealed class CdcSocrataConnector(
             SourceDate = DateTime.UtcNow,
             SourceAttribution = $"CDC via data.cdc.gov/{source.Url}"
         };
+    }
+
+    /// <summary>
+    /// COVID-19 Vaccination Distribution (unsk-b7fc)
+    /// Fields: date, location (state code), administered, distributed
+    /// </summary>
+    private static NormalizedFeedRecord? ParseCovidVaxRow(JsonElement row, FeedSource source)
+    {
+        var location = GetStringField(row, "location");
+        var dateStr = GetStringField(row, "date");
+        var administered = GetStringField(row, "administered");
+        var adminPer100k = GetStringField(row, "admin_per_100k");
+
+        if (location is null || location.Length > 2)
+            return null; // Skip non-state rows
+
+        var dataDate = TryParseDate(dateStr);
+        var count = TryParseCount(administered);
+
+        var externalId = $"covidvax:{location}:{dataDate?.ToString("yyyy-MM-dd") ?? "nodate"}";
+
+        return new NormalizedFeedRecord
+        {
+            ExternalSourceId = externalId,
+            RawPayloadJson = row.GetRawText(),
+            RecordType = NormalizedRecordType.TrendDataPoint,
+            Disease = "COVID-19 Vaccination",
+            JurisdictionName = location,
+            CaseCount = TryParseCount(adminPer100k),
+            DataDate = dataDate,
+            SourceDate = DateTime.UtcNow,
+            SourceAttribution = "CDC COVID-19 Vaccination Distribution",
+            Summary = count is not null ? $"Total doses administered: {count:N0}" : null
+        };
+    }
+
+    /// <summary>
+    /// CDC PLACES (swc5-untb) — County-level chronic disease prevalence
+    /// Fields: stateabbr, locationname, measure, data_value, data_value_type, category
+    /// </summary>
+    private static NormalizedFeedRecord? ParsePlacesRow(JsonElement row, FeedSource source)
+    {
+        var stateAbbr = GetStringField(row, "stateabbr");
+        var countyName = GetStringField(row, "locationname");
+        var measure = GetStringField(row, "measure");
+        var valueStr = GetStringField(row, "data_value");
+        var dataValueType = GetStringField(row, "data_value_type");
+
+        if (stateAbbr is null || countyName is null || measure is null)
+            return null;
+
+        // Only use age-adjusted prevalence to avoid duplicates
+        if (dataValueType is not null && !dataValueType.Contains("Age-adjusted", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var value = TryParseCount(valueStr);
+        var jurisdiction = $"{countyName} County, {stateAbbr}";
+        var externalId = $"places:{stateAbbr}:{countyName}:{measure}";
+
+        return new NormalizedFeedRecord
+        {
+            ExternalSourceId = externalId,
+            RawPayloadJson = row.GetRawText(),
+            RecordType = NormalizedRecordType.TrendDataPoint,
+            Disease = measure,
+            JurisdictionName = jurisdiction,
+            CaseCount = value,
+            DataDate = DateTime.UtcNow,
+            SourceDate = DateTime.UtcNow,
+            SourceAttribution = "CDC PLACES",
+            Summary = valueStr is not null ? $"{measure}: {valueStr}%" : null
+        };
+    }
+
+    /// <summary>
+    /// Drug Overdose Deaths (xkb8-kh2a)
+    /// Fields: state, state_name, year, month, indicator, data_value, predicted_value
+    /// </summary>
+    private static NormalizedFeedRecord? ParseOverdoseRow(JsonElement row, FeedSource source)
+    {
+        var stateName = GetStringField(row, "state_name");
+        var stateCode = GetStringField(row, "state");
+        var indicator = GetStringField(row, "indicator");
+        var yearStr = GetStringField(row, "year");
+        var monthStr = GetStringField(row, "month");
+        var valueStr = GetStringField(row, "data_value") ?? GetStringField(row, "predicted_value");
+
+        if (stateCode is null || indicator is null)
+            return null;
+
+        var value = TryParseCount(valueStr);
+        var dataDate = TryParseOverdoseDate(yearStr, monthStr);
+        var jurisdiction = stateName ?? stateCode;
+        var disease = $"Drug Overdose ({indicator})";
+        var externalId = $"overdose:{stateCode}:{yearStr}:{monthStr}:{indicator}";
+
+        return new NormalizedFeedRecord
+        {
+            ExternalSourceId = externalId,
+            RawPayloadJson = row.GetRawText(),
+            RecordType = NormalizedRecordType.TrendDataPoint,
+            Disease = disease,
+            JurisdictionName = jurisdiction,
+            CaseCount = value,
+            DataDate = dataDate,
+            SourceDate = DateTime.UtcNow,
+            SourceAttribution = "CDC Provisional Drug Overdose Deaths"
+        };
+    }
+
+    private static DateTime? TryParseOverdoseDate(string? yearStr, string? monthStr)
+    {
+        if (!int.TryParse(yearStr, out var year) || year < 2000)
+            return null;
+
+        var monthNames = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["January"] = 1, ["February"] = 2, ["March"] = 3, ["April"] = 4,
+            ["May"] = 5, ["June"] = 6, ["July"] = 7, ["August"] = 8,
+            ["September"] = 9, ["October"] = 10, ["November"] = 11, ["December"] = 12
+        };
+
+        if (monthStr is not null && monthNames.TryGetValue(monthStr, out var month))
+            return new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        return new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     }
 
     private static string? BuildWastewaterSummary(int? percentile, int? percentChange)

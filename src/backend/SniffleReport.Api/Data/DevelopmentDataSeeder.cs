@@ -372,6 +372,99 @@ public static class DevelopmentDataSeeder
                 IsEnabled = true,
                 AutoPublish = true,
                 LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            // --- New Socrata datasets ---
+            new FeedSource
+            {
+                Name = "CDC COVID-19 Vaccination Distribution",
+                Type = FeedSourceType.CdcSocrata,
+                Url = "unsk-b7fc",
+                SoqlQuery = "SELECT date, location, administered, admin_per_100k WHERE date > '2025-01-01' ORDER BY date DESC LIMIT 5000",
+                PollingInterval = TimeSpan.FromHours(24),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "CDC PLACES County Health",
+                Type = FeedSourceType.CdcSocrata,
+                Url = "swc5-untb",
+                SoqlQuery = "SELECT stateabbr, locationname, category, measure, data_value, data_value_type WHERE data_value_type = 'Age-adjusted prevalence' LIMIT 5000",
+                PollingInterval = TimeSpan.FromDays(7),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "CDC Provisional Drug Overdose Deaths",
+                Type = FeedSourceType.CdcSocrata,
+                Url = "xkb8-kh2a",
+                SoqlQuery = "SELECT state, state_name, year, month, indicator, data_value, predicted_value WHERE year >= '2025' AND data_value IS NOT NULL ORDER BY year DESC, month DESC LIMIT 5000",
+                PollingInterval = TimeSpan.FromDays(7),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            // --- New RSS feeds ---
+            new FeedSource
+            {
+                Name = "FDA Drug Recalls",
+                Type = FeedSourceType.CdcRss,
+                Url = "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/drug-recalls/rss.xml",
+                PollingInterval = TimeSpan.FromHours(12),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "FDA Food and Safety Recalls",
+                Type = FeedSourceType.CdcRss,
+                Url = "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/recalls/rss.xml",
+                PollingInterval = TimeSpan.FromHours(12),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            // --- New REST API connectors ---
+            new FeedSource
+            {
+                Name = "NPI Registry — Pharmacies",
+                Type = FeedSourceType.NpiRegistry,
+                Url = "pharmacy",
+                PollingInterval = TimeSpan.FromDays(30),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "NPI Registry — Clinics",
+                Type = FeedSourceType.NpiRegistry,
+                Url = "urgent care",
+                PollingInterval = TimeSpan.FromDays(30),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "NPI Registry — Hospitals",
+                Type = FeedSourceType.NpiRegistry,
+                Url = "hospital",
+                PollingInterval = TimeSpan.FromDays(30),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "openFDA Drug Enforcement",
+                Type = FeedSourceType.OpenFda,
+                Url = "drug/enforcement.json?limit=100&sort=report_date:desc",
+                PollingInterval = TimeSpan.FromHours(24),
+                IsEnabled = true,
+                AutoPublish = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
             }
         ];
     }
