@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-import { useStateDetail, type CountyEntry } from '../hooks/useStaticData'
+import { useStateDetail } from '../hooks/useStaticData'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
 type SortKey = 'name' | 'publishedAlertCount' | 'resourceTotal'
@@ -21,20 +21,13 @@ export function StateBrowsePage() {
   const stateQuery = useStateDetail(stateCode ?? '')
   const state = stateQuery.data
 
-  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
 
   const counties = useMemo(() => {
     if (!state) return []
-    let result: CountyEntry[] = state.counties
 
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter((c) => c.name.toLowerCase().includes(q))
-    }
-
-    return [...result].sort((a, b) => {
+    return [...state.counties].sort((a, b) => {
       let cmp = 0
       switch (sortKey) {
         case 'name': cmp = a.name.localeCompare(b.name); break
@@ -43,7 +36,7 @@ export function StateBrowsePage() {
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [state, search, sortKey, sortDir])
+  }, [state, sortKey, sortDir])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -112,17 +105,6 @@ export function StateBrowsePage() {
         </article>
 
         <section className="page-panel">
-          <div className="status-filters">
-            <input
-              className="status-search"
-              type="text"
-              placeholder="Search counties..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <span className="status-result-count">{counties.length} counties</span>
-          </div>
-
           <div className="status-table-wrap">
             <table className="status-table status-table--regions">
               <thead>
