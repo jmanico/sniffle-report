@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useRegion } from '../../hooks/useRegion'
 import { validateAndSanitizeUrl } from '../../utils/validateAndSanitizeUrl'
 import { RegionSelector } from '../region/RegionSelector'
+import { SniffleReportLogo } from './SniffleReportLogo'
 
 const navItems = [
   { label: 'Dashboard', segment: '' },
@@ -19,9 +20,14 @@ export function Header() {
     <header className="site-header">
       <div className="site-header__inner">
         <NavLink className="brand-lockup" to={validateAndSanitizeUrl(buildRegionPath())}>
-          <span className="brand-lockup__eyebrow">Sniffle Report</span>
-          <span className="brand-lockup__title">Region-scoped health intelligence</span>
-          <span className="brand-lockup__subtitle">Alerts, trends, prevention, and local care access</span>
+          <SniffleReportLogo />
+          <span className="brand-lockup__copy">
+            <span className="brand-lockup__eyebrow">Sniffle Report</span>
+            <span className="brand-lockup__title">Region-scoped health intelligence</span>
+            <span className="brand-lockup__subtitle">
+              Alerts, trends, prevention, and local care access
+            </span>
+          </span>
         </NavLink>
 
         <div className="nav-cluster">
@@ -44,7 +50,7 @@ export function Header() {
           <details className="mobile-nav">
             <summary className="mobile-nav__summary">Menu</summary>
             <div className="mobile-nav__panel">
-              <div className="mobile-nav__title">Mobile navigation placeholder</div>
+              <div className="mobile-nav__title">Navigate</div>
               <div className="mobile-nav__links" role="list">
                 {navItems.map((item) => (
                   <NavLink
