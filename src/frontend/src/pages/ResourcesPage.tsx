@@ -11,6 +11,7 @@ const tabs: Array<{ label: string; value: ResourceType | 'All' }> = [
   { label: 'All', value: 'All' },
   { label: 'Clinics', value: 'Clinic' },
   { label: 'Pharmacies', value: 'Pharmacy' },
+  { label: 'Hospitals', value: 'Hospital' },
   { label: 'Vaccination Sites', value: 'VaccinationSite' },
 ]
 

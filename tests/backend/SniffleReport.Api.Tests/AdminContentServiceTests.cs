@@ -73,7 +73,7 @@ public sealed class AdminContentServiceTests
     public async Task SoftDeleteNewsItemAsync_SetsSoftDeleteFieldsAndAudit()
     {
         await using var dbContext = CreateDbContext();
-        var service = new NewsService(dbContext);
+        var service = new NewsService(dbContext, new RegionHierarchyService(dbContext));
         var newsItemId = await dbContext.NewsItems.Select(item => item.Id).FirstAsync();
 
         var deleted = await service.SoftDeleteAsync(newsItemId, "Retiring outdated article");

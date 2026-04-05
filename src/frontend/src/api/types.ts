@@ -437,6 +437,25 @@ export type SnapshotPreventionSummary = z.infer<typeof snapshotPreventionSummary
 export type SnapshotNewsSummary = z.infer<typeof snapshotNewsSummarySchema>
 export type RegionDashboard = z.infer<typeof regionDashboardSchema>
 
+export interface NewsFilters {
+  headline?: string
+  page?: number
+  pageSize?: number
+}
+
+export const newsListItemSchema = z.object({
+  id: guidSchema,
+  regionId: guidSchema,
+  headline: z.string().min(1),
+  sourceUrl: z.string(),
+  publishedAt: isoDateTimeSchema,
+  createdAt: isoDateTimeSchema,
+  factCheckStatus: factCheckStatusSchema.nullable(),
+  sourceAttribution: z.string().nullable(),
+})
+
+export type NewsListItem = z.infer<typeof newsListItemSchema>
+
 export const regionStatusSchema = z.object({
   regionId: guidSchema,
   name: z.string().min(1),

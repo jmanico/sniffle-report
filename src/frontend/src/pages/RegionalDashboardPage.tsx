@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
 import type { SnapshotTrendHighlight } from '../api/types'
+import { FactCheckBadge } from '../components/news/FactCheckBadge'
 import { SeverityBadge } from '../components/dashboard/SeverityBadge'
 import { useRegion } from '../hooks/useRegion'
 import { useDashboard } from '../hooks/useDashboard'
@@ -57,9 +58,17 @@ export function RegionalDashboardPage() {
     .slice(0, 3)
 
   const resourceCounts = dashboard?.resourceCounts
-  const resourceSummary = resourceCounts
-    ? `${resourceCounts.clinic} clinics, ${resourceCounts.pharmacy} pharmacies near you`
-    : '0 clinics, 0 pharmacies near you'
+  const resourceParts = resourceCounts
+    ? [
+        resourceCounts.clinic > 0 ? `${resourceCounts.clinic} clinics` : null,
+        resourceCounts.pharmacy > 0 ? `${resourceCounts.pharmacy} pharmacies` : null,
+        resourceCounts.hospital > 0 ? `${resourceCounts.hospital} hospitals` : null,
+        resourceCounts.vaccinationSite > 0 ? `${resourceCounts.vaccinationSite} vaccination sites` : null,
+      ].filter(Boolean)
+    : []
+  const resourceSummary = resourceParts.length > 0
+    ? resourceParts.join(', ')
+    : 'No local resources indexed'
 
   return (
     <section className="page-frame">
@@ -200,8 +209,41 @@ export function RegionalDashboardPage() {
           <section className="page-panel dashboard-card">
             <div className="dashboard-card__header">
               <div>
+                <span className="section-kicker">Health news</span>
+                <strong>Recent alerts and recalls</strong>
+              </div>
+              <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('news'))}>
+                View all news
+              </Link>
+            </div>
+
+            {isLoading ? (
+              <div className="dashboard-skeleton-group" aria-hidden="true">
+                <div className="dashboard-skeleton dashboard-skeleton--line" />
+                <div className="dashboard-skeleton dashboard-skeleton--card" />
+              </div>
+            ) : dashboard?.newsHighlights.length ? (
+              <div className="news-list">
+                {dashboard.newsHighlights.map((item) => (
+                  <article className="news-card news-card--compact" key={item.newsItemId}>
+                    <div className="news-card__header">
+                      <strong>{item.headline}</strong>
+                      <FactCheckBadge status={item.factCheckStatus as 'Verified' | 'Pending' | 'Disputed' | 'Unverified' | null} />
+                    </div>
+                    <span className="news-card__meta">{formatDate(item.publishedAt)}</span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="dashboard-empty">No health news for this region yet.</p>
+            )}
+          </section>
+
+          <section className="page-panel dashboard-card">
+            <div className="dashboard-card__header">
+              <div>
                 <span className="section-kicker">Local access</span>
-                <strong>Nearby clinics and pharmacies</strong>
+                <strong>Nearby healthcare resources</strong>
               </div>
               <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('resources'))}>
                 Explore resources

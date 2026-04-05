@@ -5,6 +5,7 @@ import type {
   AdminResourcesFilters,
   AlertsFilters,
   NearbyResourcesFilters,
+  NewsFilters,
   PreventionFilters,
   RegionsFilters,
   ResourcesFilters,
@@ -29,6 +30,7 @@ export const queryKeys = {
   resourceById: (regionId: string, resourceId: string) => ['resources', regionId, resourceId] as const,
   nearbyResources: (regionId: string, filters: NearbyResourcesFilters) =>
     ['resources', regionId, 'nearby', filters] as const,
+  news: (regionId: string, filters: NewsFilters = {}) => ['news', regionId, filters] as const,
   prevention: (regionId: string, filters: PreventionFilters = {}) =>
     ['prevention', regionId, filters] as const,
   preventionById: (regionId: string, guideId: string) => ['prevention', regionId, guideId] as const,

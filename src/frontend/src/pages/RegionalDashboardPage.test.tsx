@@ -95,7 +95,7 @@ describe('RegionalDashboardPage', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Travis County, TX' })).toBeInTheDocument()
-    expect(screen.getByText(/12 clinics, 8 pharmacies near you/i)).toBeInTheDocument()
+    expect(screen.getByText(/12 clinics/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /view all alerts/i })).toHaveAttribute(
       'href',
       '/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b/alerts',

@@ -1338,3 +1338,72 @@
 .status-stale--recent { background: #ffc107; }
 .status-stale--stale { background: #dc3545; }
 .status-stale--never { background: #adb5bd; }
+
+/* ── News page + cards ────────────────────────────── */
+
+.news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.news-card {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border, #e8e0d4);
+  border-radius: 0.5rem;
+  background: var(--paper, #f8f3e8);
+}
+
+.news-card--compact {
+  padding: 0.5rem 0.75rem;
+}
+
+.news-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.news-card__header strong {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.news-card__meta {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ink-soft, #536774);
+  margin-top: 0.25rem;
+}
+
+.news-card__source {
+  display: inline-block;
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--accent, #be5b2a);
+  text-decoration: none;
+}
+
+.news-card__source:hover {
+  text-decoration: underline;
+}
+
+/* ── Fact-check badge ─────────────────────────────── */
+
+.fact-check-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fact-check-badge--verified { background: #d4edda; color: #155724; }
+.fact-check-badge--pending { background: #e2e3e5; color: #383d41; }
+.fact-check-badge--disputed { background: #f8d7da; color: #721c24; }
+.fact-check-badge--unverified { background: #fff3cd; color: #856404; }

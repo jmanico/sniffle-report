@@ -6,8 +6,53 @@ using SniffleReport.Api.Models.Enums;
 
 namespace SniffleReport.Api.Services;
 
-public sealed class NewsService(AppDbContext dbContext)
+public sealed class NewsService(AppDbContext dbContext, RegionHierarchyService regionHierarchy)
 {
+    public async Task<IReadOnlyList<NewsItem>> GetByRegionAsync(
+        Guid regionId,
+        NewsFilters filters,
+        CancellationToken cancellationToken = default)
+    {
+        var scopedRegionIds = await regionHierarchy.GetScopedRegionIdsAsync(regionId, cancellationToken);
+
+        IQueryable<NewsItem> query = dbContext.NewsItems
+            .AsNoTracking()
+            .Include(item => item.FactCheck)
+            .Where(item => scopedRegionIds.Contains(item.RegionId));
+
+        if (!string.IsNullOrWhiteSpace(filters.Headline))
+        {
+            var normalized = filters.Headline.Trim().ToLowerInvariant();
+            query = query.Where(item => item.Headline.ToLower().Contains(normalized));
+        }
+
+        return await query
+            .OrderByDescending(item => item.PublishedAt)
+            .Skip((filters.Page - 1) * filters.PageSize)
+            .Take(filters.PageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountByRegionAsync(
+        Guid regionId,
+        NewsFilters filters,
+        CancellationToken cancellationToken = default)
+    {
+        var scopedRegionIds = await regionHierarchy.GetScopedRegionIdsAsync(regionId, cancellationToken);
+
+        IQueryable<NewsItem> query = dbContext.NewsItems
+            .AsNoTracking()
+            .Where(item => scopedRegionIds.Contains(item.RegionId));
+
+        if (!string.IsNullOrWhiteSpace(filters.Headline))
+        {
+            var normalized = filters.Headline.Trim().ToLowerInvariant();
+            query = query.Where(item => item.Headline.ToLower().Contains(normalized));
+        }
+
+        return await query.CountAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<NewsItem>> GetAdminNewsItemsAsync(
         GetAdminNewsItemsQuery query,
         CancellationToken cancellationToken = default)
