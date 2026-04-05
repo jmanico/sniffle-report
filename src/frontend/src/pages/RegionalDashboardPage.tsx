@@ -1,16 +1,13 @@
 import { Link } from 'react-router-dom'
 
-import type { AlertListItem, CostTier, PreventionListItem, TrendSeries } from '../api/types'
+import type { SnapshotTrendHighlight } from '../api/types'
 import { SeverityBadge } from '../components/dashboard/SeverityBadge'
 import { useRegion } from '../hooks/useRegion'
-import { useAlerts } from '../hooks/useAlerts'
-import { usePrevention } from '../hooks/usePrevention'
-import { useResources } from '../hooks/useResources'
+import { useDashboard } from '../hooks/useDashboard'
 import { useRegionById } from '../hooks/useRegions'
-import { useTrends } from '../hooks/useTrends'
 import { validateAndSanitizeUrl } from '../utils/validateAndSanitizeUrl'
 
-const severityRank: Record<AlertListItem['severity'], number> = {
+const severityRank: Record<string, number> = {
   Critical: 4,
   High: 3,
   Moderate: 2,
@@ -32,81 +29,37 @@ function formatDate(date: string) {
   }).format(new Date(date))
 }
 
-function getCheapestCostTier(costTiers: CostTier[]) {
-  return [...costTiers].sort((left, right) => Number(left.price) - Number(right.price))[0] ?? null
-}
-
-function formatCostSummary(guide: PreventionListItem) {
-  const cheapestTier = getCheapestCostTier(guide.costTiers)
-
-  if (!cheapestTier) {
-    return 'Cost details unavailable'
-  }
-
-  if (cheapestTier.type === 'Free') {
-    return `Free through ${cheapestTier.provider}`
-  }
-
-  return `From $${Number(cheapestTier.price).toFixed(2)} via ${cheapestTier.provider}`
-}
-
-function getLatestTrendCount(series: TrendSeries) {
-  const latestPoint = [...series.dataPoints].sort((left, right) => {
-    return new Date(right.date).getTime() - new Date(left.date).getTime()
-  })[0]
-
-  return latestPoint ?? null
+function formatWowChange(highlight: SnapshotTrendHighlight) {
+  const sign = highlight.wowChangePercent >= 0 ? '+' : ''
+  return `${sign}${highlight.wowChangePercent.toFixed(1)}%`
 }
 
 export function RegionalDashboardPage() {
   const { regionId, regionLabel, buildRegionPath } = useRegion()
   const regionQuery = useRegionById(regionId)
-  const alertsQuery = useAlerts(regionId, { status: 'Published', page: 1, pageSize: 25 })
-  const trendsQuery = useTrends(regionId, { page: 1, pageSize: 6 })
-  const preventionQuery = usePrevention(regionId, { page: 1, pageSize: 3 })
-  const resourcesQuery = useResources(regionId, { page: 1, pageSize: 1 })
-  const clinicsQuery = useResources(regionId, { type: 'Clinic', page: 1, pageSize: 1 })
-  const pharmaciesQuery = useResources(regionId, { type: 'Pharmacy', page: 1, pageSize: 1 })
+  const dashboardQuery = useDashboard(regionId)
 
-  const topAlerts = [...(alertsQuery.data?.items ?? [])]
+  const dashboard = dashboardQuery.data
+  const regionTypeLabel = regionQuery.data?.type ?? 'Region'
+  const isLoading = regionQuery.isLoading || dashboardQuery.isLoading
+  const hasError = regionQuery.isError || dashboardQuery.isError
+
+  const topAlerts = [...(dashboard?.topAlerts ?? [])]
     .sort((left, right) => {
-      const severityDifference = severityRank[right.severity] - severityRank[left.severity]
-
-      if (severityDifference !== 0) {
-        return severityDifference
-      }
-
+      const severityDiff = (severityRank[right.severity] ?? 0) - (severityRank[left.severity] ?? 0)
+      if (severityDiff !== 0) return severityDiff
       return right.caseCount - left.caseCount
     })
     .slice(0, 5)
 
-  const trendHighlights = [...(trendsQuery.data?.items ?? [])]
-    .map((series) => ({
-      series,
-      latestPoint: getLatestTrendCount(series),
-    }))
-    .filter((item) => item.latestPoint !== null)
-    .sort((left, right) => right.latestPoint.caseCount - left.latestPoint.caseCount)
+  const trendHighlights = [...(dashboard?.trendHighlights ?? [])]
+    .sort((left, right) => Math.abs(right.wowChangePercent) - Math.abs(left.wowChangePercent))
     .slice(0, 3)
 
-  const regionTypeLabel = regionQuery.data?.type ?? 'Region'
-  const resourceSummary = `${clinicsQuery.data?.totalCount ?? 0} clinics, ${pharmaciesQuery.data?.totalCount ?? 0} pharmacies near you`
-  const isLoading =
-    regionQuery.isLoading ||
-    alertsQuery.isLoading ||
-    trendsQuery.isLoading ||
-    preventionQuery.isLoading ||
-    resourcesQuery.isLoading ||
-    clinicsQuery.isLoading ||
-    pharmaciesQuery.isLoading
-  const hasError =
-    regionQuery.isError ||
-    alertsQuery.isError ||
-    trendsQuery.isError ||
-    preventionQuery.isError ||
-    resourcesQuery.isError ||
-    clinicsQuery.isError ||
-    pharmaciesQuery.isError
+  const resourceCounts = dashboard?.resourceCounts
+  const resourceSummary = resourceCounts
+    ? `${resourceCounts.clinic} clinics, ${resourceCounts.pharmacy} pharmacies near you`
+    : '0 clinics, 0 pharmacies near you'
 
   return (
     <section className="page-frame">
@@ -120,9 +73,9 @@ export function RegionalDashboardPage() {
             care access summaries without forcing users through every sub-page first.
           </p>
           <div className="page-badges">
-            <span className="page-badge">{alertsQuery.data?.totalCount ?? 0} published alerts</span>
-            <span className="page-badge">{resourcesQuery.data?.totalCount ?? 0} local resources</span>
-            <span className="page-badge">{preventionQuery.data?.totalCount ?? 0} prevention guides</span>
+            <span className="page-badge">{dashboard?.publishedAlertCount ?? 0} published alerts</span>
+            <span className="page-badge">{resourceCounts?.total ?? 0} local resources</span>
+            <span className="page-badge">{dashboard?.preventionHighlights.length ?? 0} prevention guides</span>
           </div>
         </article>
 
@@ -157,15 +110,14 @@ export function RegionalDashboardPage() {
                 {topAlerts.map((alert) => (
                   <Link
                     className="dashboard-alert-card"
-                    key={alert.id}
-                    to={validateAndSanitizeUrl(buildRegionPath(`alerts/${alert.id}`))}
+                    key={alert.alertId}
+                    to={validateAndSanitizeUrl(buildRegionPath(`alerts/${alert.alertId}`))}
                   >
                     <div className="dashboard-alert-card__row">
-                      <SeverityBadge severity={alert.severity} />
+                      <SeverityBadge severity={alert.severity as 'Low' | 'Moderate' | 'High' | 'Critical'} />
                       <span className="dashboard-alert-card__cases">{alert.caseCount} cases</span>
                     </div>
                     <strong>{alert.title}</strong>
-                    <p>{alert.summary}</p>
                     <span className="dashboard-alert-card__meta">
                       {alert.disease} · {formatDate(alert.sourceDate)}
                     </span>
@@ -181,7 +133,7 @@ export function RegionalDashboardPage() {
             <div className="dashboard-card__header">
               <div>
                 <span className="section-kicker">Trend summary</span>
-                <strong>Latest case counts for leading diseases</strong>
+                <strong>Week-over-week changes for leading diseases</strong>
               </div>
             </div>
 
@@ -193,12 +145,14 @@ export function RegionalDashboardPage() {
               </div>
             ) : trendHighlights.length ? (
               <div className="dashboard-trend-list">
-                {trendHighlights.map(({ series, latestPoint }) => (
-                  <article className="dashboard-trend-card" key={series.alertId}>
-                    <strong>{series.disease}</strong>
-                    <span className="dashboard-trend-card__count">{latestPoint.caseCount} latest reported cases</span>
+                {trendHighlights.map((highlight) => (
+                  <article className="dashboard-trend-card" key={highlight.alertId}>
+                    <strong>{highlight.disease}</strong>
+                    <span className="dashboard-trend-card__count">
+                      {highlight.latestCaseCount} cases ({formatWowChange(highlight)} WoW)
+                    </span>
                     <span className="dashboard-trend-card__meta">
-                      {formatDate(latestPoint.date)} · {series.sourceAttribution}
+                      {formatDate(highlight.latestDate)} · Previous: {highlight.previousCaseCount} cases
                     </span>
                   </article>
                 ))}
@@ -212,7 +166,7 @@ export function RegionalDashboardPage() {
             <div className="dashboard-card__header">
               <div>
                 <span className="section-kicker">Prevention highlights</span>
-                <strong>Quick access to lower-cost guidance</strong>
+                <strong>Quick access to guidance</strong>
               </div>
               <Link className="dashboard-link" to={validateAndSanitizeUrl(buildRegionPath('prevention'))}>
                 Browse prevention
@@ -224,17 +178,17 @@ export function RegionalDashboardPage() {
                 <div className="dashboard-skeleton dashboard-skeleton--line" />
                 <div className="dashboard-skeleton dashboard-skeleton--card" />
               </div>
-            ) : preventionQuery.data?.items.length ? (
+            ) : dashboard?.preventionHighlights.length ? (
               <div className="dashboard-prevention-list">
-                {preventionQuery.data.items.map((guide) => (
+                {dashboard.preventionHighlights.map((guide) => (
                   <Link
                     className="dashboard-prevention-card"
-                    key={guide.id}
-                    to={validateAndSanitizeUrl(buildRegionPath(`prevention/${guide.id}`))}
+                    key={guide.guideId}
+                    to={validateAndSanitizeUrl(buildRegionPath(`prevention/${guide.guideId}`))}
                   >
                     <strong>{guide.title}</strong>
                     <span className="dashboard-prevention-card__meta">{guide.disease}</span>
-                    <p>{formatCostSummary(guide)}</p>
+                    <p>{guide.hasCostTiers ? 'Cost guidance available' : 'Cost details unavailable'}</p>
                   </Link>
                 ))}
               </div>
@@ -263,7 +217,7 @@ export function RegionalDashboardPage() {
               <div className="dashboard-resource-summary">
                 <strong>{resourceSummary}</strong>
                 <p>
-                  {resourcesQuery.data?.totalCount ?? 0} clinics, pharmacies, hospitals, and vaccination sites are indexed for this region.
+                  {resourceCounts?.total ?? 0} clinics, pharmacies, hospitals, and vaccination sites are indexed for this region.
                 </p>
               </div>
             )}

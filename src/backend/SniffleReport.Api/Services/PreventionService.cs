@@ -6,7 +6,7 @@ using SniffleReport.Api.Models.Enums;
 
 namespace SniffleReport.Api.Services;
 
-public sealed class PreventionService(AppDbContext dbContext)
+public sealed class PreventionService(AppDbContext dbContext, RegionHierarchyService regionHierarchy)
 {
     public async Task<IReadOnlyList<PreventionGuide>> GetAdminGuidesAsync(
         GetAdminPreventionGuidesQuery query,
@@ -203,34 +203,9 @@ public sealed class PreventionService(AppDbContext dbContext)
         return guides;
     }
 
-    private async Task<IReadOnlyCollection<Guid>> GetScopedRegionIdsAsync(Guid rootRegionId, CancellationToken cancellationToken)
+    private Task<IReadOnlyCollection<Guid>> GetScopedRegionIdsAsync(Guid rootRegionId, CancellationToken cancellationToken)
     {
-        var regions = await dbContext.Regions
-            .AsNoTracking()
-            .Select(region => new { region.Id, region.ParentId })
-            .ToListAsync(cancellationToken);
-
-        var scopedRegionIds = new HashSet<Guid> { rootRegionId };
-        var queue = new Queue<Guid>();
-        queue.Enqueue(rootRegionId);
-
-        while (queue.Count > 0)
-        {
-            var currentRegionId = queue.Dequeue();
-            var childRegionIds = regions
-                .Where(region => region.ParentId == currentRegionId)
-                .Select(region => region.Id);
-
-            foreach (var childRegionId in childRegionIds)
-            {
-                if (scopedRegionIds.Add(childRegionId))
-                {
-                    queue.Enqueue(childRegionId);
-                }
-            }
-        }
-
-        return scopedRegionIds;
+        return regionHierarchy.GetScopedRegionIdsAsync(rootRegionId, cancellationToken);
     }
 
     private static CostTier MapCostTier(AdminCostTierInput input)

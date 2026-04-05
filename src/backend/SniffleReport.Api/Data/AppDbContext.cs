@@ -32,6 +32,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<IngestedRecord> IngestedRecords => Set<IngestedRecord>();
 
+    public DbSet<RegionSnapshot> RegionSnapshots => Set<RegionSnapshot>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -49,6 +51,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureFeedSource(modelBuilder);
         ConfigureFeedSyncLog(modelBuilder);
         ConfigureIngestedRecord(modelBuilder);
+        ConfigureRegionSnapshot(modelBuilder);
     }
 
     private static void ConfigureRegion(ModelBuilder modelBuilder)
@@ -221,5 +224,26 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         entity.HasIndex(x => new { x.FeedSourceId, x.ExternalSourceId })
             .IsUnique()
             .HasDatabaseName("IX_IngestedRecord_FeedSourceId_ExternalSourceId");
+    }
+
+    private static void ConfigureRegionSnapshot(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RegionSnapshot>();
+
+        entity.ToTable("RegionSnapshots");
+        entity.Property(x => x.TopAlertsJson).HasColumnType("jsonb");
+        entity.Property(x => x.TrendHighlightsJson).HasColumnType("jsonb");
+        entity.Property(x => x.ResourceCountsJson).HasColumnType("jsonb");
+        entity.Property(x => x.PreventionHighlightsJson).HasColumnType("jsonb");
+        entity.Property(x => x.NewsHighlightsJson).HasColumnType("jsonb");
+        entity.HasIndex(x => x.RegionId)
+            .IsUnique()
+            .HasDatabaseName("IX_RegionSnapshot_RegionId");
+        entity.HasIndex(x => x.ComputedAt)
+            .HasDatabaseName("IX_RegionSnapshot_ComputedAt");
+        entity.HasOne(x => x.Region)
+            .WithOne()
+            .HasForeignKey<RegionSnapshot>(x => x.RegionId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -15,7 +15,7 @@ public sealed class AdminAlertServiceTests
     public async Task CreateAsync_PersistsAlert()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var regionId = await dbContext.Regions.Select(region => region.Id).FirstAsync();
 
         var created = await service.CreateAsync(new CreateAlertRequest
@@ -44,7 +44,7 @@ public sealed class AdminAlertServiceTests
     public async Task UpdateStatusAsync_ChangesAlertStatus()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var alertId = await dbContext.HealthAlerts.Select(alert => alert.Id).FirstAsync();
 
         var updated = await service.UpdateStatusAsync(alertId, new UpdateAlertStatusRequest
@@ -66,7 +66,7 @@ public sealed class AdminAlertServiceTests
     public async Task SoftDeleteAsync_SetsSoftDeleteFields()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var alertId = await dbContext.HealthAlerts.Select(alert => alert.Id).FirstAsync();
 
         var deleted = await service.SoftDeleteAsync(alertId, "Remove old content");
@@ -89,7 +89,7 @@ public sealed class AdminAlertServiceTests
     public async Task UpdateAsync_WritesAuditSnapshot()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var alertId = await dbContext.HealthAlerts.Select(alert => alert.Id).FirstAsync();
         var regionId = await dbContext.Regions.Select(region => region.Id).FirstAsync();
 

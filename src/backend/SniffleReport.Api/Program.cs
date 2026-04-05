@@ -5,11 +5,24 @@ using SniffleReport.Api.Models.Configuration;
 using SniffleReport.Api.Services;
 using SniffleReport.Api.Services.Ingestion;
 using SniffleReport.Api.Services.Ingestion.Connectors;
+using SniffleReport.Api.Services.Snapshots;
 
 var builder = WebApplication.CreateBuilder(args);
+const string LocalFrontendCorsPolicy = "LocalFrontend";
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(LocalFrontendCorsPolicy, policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:5173", "http://localhost:5174")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -22,6 +35,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         npgsqlOptions.CommandTimeout(30);
     });
 });
+builder.Services.AddScoped<RegionHierarchyService>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<NewsService>();
 builder.Services.AddScoped<PreventionService>();
@@ -56,6 +70,12 @@ builder.Services.AddScoped<IngestionService>();
 // Background polling service
 builder.Services.AddHostedService<FeedPollingBackgroundService>();
 
+// Region snapshot configuration and background service
+builder.Services.Configure<SnapshotOptions>(
+    builder.Configuration.GetSection(SnapshotOptions.SectionName));
+builder.Services.AddScoped<RegionSnapshotBuilder>();
+builder.Services.AddHostedService<RegionSnapshotBuilderBackgroundService>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -64,6 +84,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+app.UseCors(LocalFrontendCorsPolicy);
 
 app.MapControllers();
 app.MapGet("/", () => Results.Ok(new

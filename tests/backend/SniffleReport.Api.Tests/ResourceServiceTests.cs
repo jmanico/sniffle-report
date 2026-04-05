@@ -15,7 +15,7 @@ public sealed class ResourceServiceTests
     public async Task GetByIdAsync_DoesNotReturnResourceFromDifferentRegion()
     {
         await using var dbContext = CreateDbContext();
-        var service = new ResourceService(dbContext);
+        var service = new ResourceService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
         var chicagoResource = await dbContext.LocalResources.SingleAsync(resource => resource.Name == "Chicago Pharmacy");
 
@@ -28,7 +28,7 @@ public sealed class ResourceServiceTests
     public async Task SearchNearbyAsync_ReturnsOnlyResourcesWithinRadiusOrderedByDistance()
     {
         await using var dbContext = CreateDbContext();
-        var service = new ResourceService(dbContext);
+        var service = new ResourceService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
 
         var results = await service.SearchNearbyAsync(

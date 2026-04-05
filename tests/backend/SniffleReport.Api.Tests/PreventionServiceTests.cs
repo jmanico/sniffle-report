@@ -15,7 +15,7 @@ public sealed class PreventionServiceTests
     public async Task GetByRegionAsync_FiltersByDiseaseAndIncludesChildRegions()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PreventionService(dbContext);
+        var service = new PreventionService(dbContext, new RegionHierarchyService(dbContext));
         var county = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
 
         var results = await service.GetByRegionAsync(
@@ -34,7 +34,7 @@ public sealed class PreventionServiceTests
     public async Task GetByIdAsync_DoesNotReturnGuideFromDifferentRegion()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PreventionService(dbContext);
+        var service = new PreventionService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
         var otherGuide = await dbContext.PreventionGuides.SingleAsync(guide => guide.Title == "Chicago flu guide");
 

@@ -7,7 +7,7 @@ using SniffleReport.Api.Models.Enums;
 
 namespace SniffleReport.Api.Services;
 
-public sealed class ResourceService(AppDbContext dbContext)
+public sealed class ResourceService(AppDbContext dbContext, RegionHierarchyService regionHierarchy)
 {
     public async Task<IReadOnlyList<LocalResource>> GetAdminResourcesAsync(
         GetAdminResourcesQuery query,
@@ -276,34 +276,9 @@ public sealed class ResourceService(AppDbContext dbContext)
         return resources;
     }
 
-    private async Task<IReadOnlyCollection<Guid>> GetScopedRegionIdsAsync(Guid rootRegionId, CancellationToken cancellationToken)
+    private Task<IReadOnlyCollection<Guid>> GetScopedRegionIdsAsync(Guid rootRegionId, CancellationToken cancellationToken)
     {
-        var regions = await dbContext.Regions
-            .AsNoTracking()
-            .Select(region => new { region.Id, region.ParentId })
-            .ToListAsync(cancellationToken);
-
-        var scopedRegionIds = new HashSet<Guid> { rootRegionId };
-        var queue = new Queue<Guid>();
-        queue.Enqueue(rootRegionId);
-
-        while (queue.Count > 0)
-        {
-            var currentRegionId = queue.Dequeue();
-            var childRegionIds = regions
-                .Where(region => region.ParentId == currentRegionId)
-                .Select(region => region.Id);
-
-            foreach (var childRegionId in childRegionIds)
-            {
-                if (scopedRegionIds.Add(childRegionId))
-                {
-                    queue.Enqueue(childRegionId);
-                }
-            }
-        }
-
-        return scopedRegionIds;
+        return regionHierarchy.GetScopedRegionIdsAsync(rootRegionId, cancellationToken);
     }
 
     private static ResourceListDto MapListDto(LocalResource resource, double? distanceMiles)

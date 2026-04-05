@@ -15,7 +15,7 @@ public sealed class TrendServiceTests
     public async Task GetByAlertAsync_DoesNotReturnTrendSeriesFromDifferentRegion()
     {
         await using var dbContext = CreateDbContext();
-        var service = new TrendService(dbContext);
+        var service = new TrendService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
         var chicagoAlert = await dbContext.HealthAlerts.SingleAsync(alert => alert.Title == "Chicago flu alert");
 
@@ -28,7 +28,7 @@ public sealed class TrendServiceTests
     public async Task GetAggregateByRegionAsync_FiltersByDateRangeAndDisease()
     {
         await using var dbContext = CreateDbContext();
-        var service = new TrendService(dbContext);
+        var service = new TrendService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
 
         var results = await service.GetAggregateByRegionAsync(

@@ -15,7 +15,7 @@ public sealed class AlertServiceTests
     public async Task GetByRegionAsync_FiltersBySeverityAndPublishedStatus()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var county = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
 
         var results = await service.GetByRegionAsync(
@@ -35,7 +35,7 @@ public sealed class AlertServiceTests
     public async Task GetByRegionAsync_IncludesChildRegionAlertsForParentRegion()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var county = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
 
         var results = await service.GetByRegionAsync(
@@ -54,7 +54,7 @@ public sealed class AlertServiceTests
     public async Task GetByIdAsync_DoesNotReturnAlertFromDifferentRegion()
     {
         await using var dbContext = CreateDbContext();
-        var service = new AlertService(dbContext);
+        var service = new AlertService(dbContext, new RegionHierarchyService(dbContext));
         var travis = await dbContext.Regions.SingleAsync(region => region.Name == "Travis County");
         var otherAlert = await dbContext.HealthAlerts.SingleAsync(alert => alert.Title == "Other county alert");
 

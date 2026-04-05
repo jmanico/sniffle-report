@@ -25,123 +25,69 @@ vi.mock('../hooks/useRegions', () => ({
       longitude: -97.7431,
       parent: null,
     },
-  }),
-}))
-
-vi.mock('../hooks/useAlerts', () => ({
-  useAlerts: () => ({
-    data: {
-      totalCount: 2,
-      items: [
-        {
-          id: '1f1ecb6b-c7dc-4142-bdc7-bff8cb6c57e4',
-          regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
-          disease: 'Influenza A',
-          title: 'Seasonal flu activity is elevated',
-          summary: 'Cases are rising.',
-          severity: 'High',
-          caseCount: 123,
-          sourceAttribution: 'Austin Public Health',
-          sourceDate: '2026-03-20T00:00:00Z',
-          createdAt: '2026-03-21T00:00:00Z',
-        },
-        {
-          id: 'cdf50eb8-cf20-4322-aa52-6e42c342f30d',
-          regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
-          disease: 'RSV',
-          title: 'Pediatric RSV remains active',
-          summary: 'Clinics are seeing more cases.',
-          severity: 'Moderate',
-          caseCount: 58,
-          sourceAttribution: 'Austin Public Health',
-          sourceDate: '2026-03-18T00:00:00Z',
-          createdAt: '2026-03-19T00:00:00Z',
-        },
-      ],
-    },
     isLoading: false,
     isError: false,
   }),
 }))
 
-vi.mock('../hooks/useTrends', () => ({
-  useTrends: () => ({
+vi.mock('../hooks/useDashboard', () => ({
+  useDashboard: () => ({
     data: {
-      totalCount: 1,
-      items: [
+      regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
+      computedAt: '2026-03-21T12:00:00Z',
+      publishedAlertCount: 2,
+      topAlerts: [
         {
           alertId: '1f1ecb6b-c7dc-4142-bdc7-bff8cb6c57e4',
-          regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
           disease: 'Influenza A',
-          alertTitle: 'Seasonal flu activity is elevated',
-          sourceAttribution: 'Austin Public Health',
-          dataPoints: [
-            {
-              date: '2026-03-01T00:00:00Z',
-              caseCount: 77,
-              source: 'Austin Public Health',
-              sourceDate: '2026-03-01T00:00:00Z',
-            },
-            {
-              date: '2026-03-20T00:00:00Z',
-              caseCount: 123,
-              source: 'Austin Public Health',
-              sourceDate: '2026-03-20T00:00:00Z',
-            },
-          ],
+          title: 'Seasonal flu activity is elevated',
+          severity: 'High',
+          caseCount: 123,
+          sourceDate: '2026-03-20T00:00:00Z',
+        },
+        {
+          alertId: 'cdf50eb8-cf20-4322-aa52-6e42c342f30d',
+          disease: 'RSV',
+          title: 'Pediatric RSV remains active',
+          severity: 'Moderate',
+          caseCount: 58,
+          sourceDate: '2026-03-18T00:00:00Z',
         },
       ],
-    },
-    isLoading: false,
-    isError: false,
-  }),
-}))
-
-vi.mock('../hooks/usePrevention', () => ({
-  usePrevention: () => ({
-    data: {
-      totalCount: 1,
-      items: [
+      trendHighlights: [
         {
-          id: 'b7e9c781-13fe-4a0e-bb73-c5f3d063a213',
-          regionId: '8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b',
+          alertId: '1f1ecb6b-c7dc-4142-bdc7-bff8cb6c57e4',
+          disease: 'Influenza A',
+          latestCaseCount: 123,
+          previousCaseCount: 77,
+          wowChangePercent: 59.7,
+          latestDate: '2026-03-20T00:00:00Z',
+        },
+      ],
+      resourceCounts: {
+        clinic: 12,
+        pharmacy: 8,
+        vaccinationSite: 3,
+        hospital: 1,
+        total: 24,
+      },
+      preventionHighlights: [
+        {
+          guideId: 'b7e9c781-13fe-4a0e-bb73-c5f3d063a213',
           disease: 'Influenza A',
           title: 'Flu shot options',
-          createdAt: '2026-03-20T00:00:00Z',
-          costTiers: [
-            {
-              type: 'Free',
-              price: 0,
-              provider: 'Austin Public Health',
-              notes: 'Walk-in clinic',
-            },
-          ],
+          hasCostTiers: true,
         },
       ],
+      newsHighlights: [],
     },
     isLoading: false,
     isError: false,
   }),
-}))
-
-vi.mock('../hooks/useResources', () => ({
-  useResources: ({}, filters?: { type?: string }) => {
-    const totalCount =
-      filters?.type === 'Clinic' ? 12 : filters?.type === 'Pharmacy' ? 8 : 24
-
-    return {
-      data: {
-        totalCount,
-        items: [],
-      },
-      isLoading: false,
-      isError: false,
-    }
-  },
 }))
 
 describe('RegionalDashboardPage', () => {
-  it('renders live dashboard summary sections', () => {
+  it('renders dashboard summary sections from snapshot', () => {
     render(
       <MemoryRouter>
         <RegionalDashboardPage />
@@ -155,5 +101,6 @@ describe('RegionalDashboardPage', () => {
       '/region/8fb8cb1d-6622-4c13-a0b8-f6ccebc5454b/alerts',
     )
     expect(screen.getByText(/seasonal flu activity is elevated/i)).toBeInTheDocument()
+    expect(screen.getByText(/59.7% WoW/i)).toBeInTheDocument()
   })
 })

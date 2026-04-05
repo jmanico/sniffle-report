@@ -15,7 +15,7 @@ public sealed class AdminContentServiceTests
     public async Task CreatePreventionGuideAsync_PersistsCostTiersAndAudit()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PreventionService(dbContext);
+        var service = new PreventionService(dbContext, new RegionHierarchyService(dbContext));
         var regionId = await dbContext.Regions.Select(region => region.Id).FirstAsync();
 
         var created = await service.CreateAsync(new CreatePreventionGuideRequest
@@ -45,7 +45,7 @@ public sealed class AdminContentServiceTests
     public async Task UpdateResourceAsync_UpdatesStructuredFieldsAndAudit()
     {
         await using var dbContext = CreateDbContext();
-        var service = new ResourceService(dbContext);
+        var service = new ResourceService(dbContext, new RegionHierarchyService(dbContext));
         var resourceId = await dbContext.LocalResources.Select(resource => resource.Id).FirstAsync();
         var regionId = await dbContext.Regions.Select(region => region.Id).FirstAsync();
 

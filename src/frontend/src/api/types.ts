@@ -379,6 +379,92 @@ export const adminNewsItemInputSchema = z.object({
   }
 })
 
+export const snapshotAlertSummarySchema = z.object({
+  alertId: guidSchema,
+  disease: z.string().min(1),
+  title: z.string().min(1),
+  severity: z.string().min(1),
+  caseCount: z.number().int().nonnegative(),
+  sourceDate: isoDateTimeSchema,
+})
+
+export const snapshotTrendHighlightSchema = z.object({
+  alertId: guidSchema,
+  disease: z.string().min(1),
+  latestCaseCount: z.number().int().nonnegative(),
+  previousCaseCount: z.number().int().nonnegative(),
+  wowChangePercent: z.number(),
+  latestDate: isoDateTimeSchema,
+})
+
+export const snapshotResourceCountsSchema = z.object({
+  clinic: z.number().int().nonnegative(),
+  pharmacy: z.number().int().nonnegative(),
+  vaccinationSite: z.number().int().nonnegative(),
+  hospital: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+})
+
+export const snapshotPreventionSummarySchema = z.object({
+  guideId: guidSchema,
+  disease: z.string().min(1),
+  title: z.string().min(1),
+  hasCostTiers: z.boolean(),
+})
+
+export const snapshotNewsSummarySchema = z.object({
+  newsItemId: guidSchema,
+  headline: z.string().min(1),
+  publishedAt: isoDateTimeSchema,
+  factCheckStatus: z.string().nullable(),
+})
+
+export const regionDashboardSchema = z.object({
+  regionId: guidSchema,
+  computedAt: isoDateTimeSchema,
+  publishedAlertCount: z.number().int().nonnegative(),
+  topAlerts: z.array(snapshotAlertSummarySchema),
+  trendHighlights: z.array(snapshotTrendHighlightSchema),
+  resourceCounts: snapshotResourceCountsSchema,
+  preventionHighlights: z.array(snapshotPreventionSummarySchema),
+  newsHighlights: z.array(snapshotNewsSummarySchema),
+})
+
+export type SnapshotAlertSummary = z.infer<typeof snapshotAlertSummarySchema>
+export type SnapshotTrendHighlight = z.infer<typeof snapshotTrendHighlightSchema>
+export type SnapshotResourceCounts = z.infer<typeof snapshotResourceCountsSchema>
+export type SnapshotPreventionSummary = z.infer<typeof snapshotPreventionSummarySchema>
+export type SnapshotNewsSummary = z.infer<typeof snapshotNewsSummarySchema>
+export type RegionDashboard = z.infer<typeof regionDashboardSchema>
+
+export const regionStatusSchema = z.object({
+  regionId: guidSchema,
+  name: z.string().min(1),
+  type: z.string().min(1),
+  state: z.string().min(1),
+  parentName: z.string().nullable(),
+  computedAt: isoDateTimeSchema.nullable(),
+  publishedAlertCount: z.number().int().nonnegative(),
+  resourceTotal: z.number().int().nonnegative(),
+})
+
+export const feedStatusSchema = z.object({
+  id: guidSchema,
+  name: z.string().min(1),
+  type: z.string().min(1),
+  isEnabled: z.boolean(),
+  lastSyncStatus: z.string().nullable(),
+  lastSyncCompletedAt: isoDateTimeSchema.nullable(),
+  consecutiveFailureCount: z.number().int().nonnegative(),
+  lastRecordsCreated: z.number().int().nullable(),
+  lastRecordsFetched: z.number().int().nullable(),
+  lastRecordsSkippedUnmappable: z.number().int().nullable(),
+  lastSyncError: z.string().nullable(),
+})
+
+export type RegionStatus = z.infer<typeof regionStatusSchema>
+export type FeedStatus = z.infer<typeof feedStatusSchema>
+
 export const adminAlertInputSchema = z.object({
   regionId: guidSchema,
   disease: z.string().trim().min(1).max(120),
