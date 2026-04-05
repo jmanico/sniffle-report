@@ -174,7 +174,9 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
             .Select(g => g.OrderByDescending(log => log.StartedAt).First())
             .ToDictionaryAsync(log => log.FeedSourceId, ct);
 
-        var feedStatus = feeds.Select(f =>
+        var feedStatus = feeds
+        .Where(f => f.IsEnabled)
+        .Select(f =>
         {
             latestSyncs.TryGetValue(f.Id, out var lastSync);
             return new
