@@ -4,101 +4,101 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Sniffle Report is a community health news site that surfaces regional health trends — communicable disease outbreaks, case breakdowns, prevention guidance, cost/access info for vaccines, and local clinic/pharmacy resources. Content is admin-driven and fact-checked.
+Sniffle Report is a **static community health site** that surfaces regional health trends — communicable disease outbreaks, case breakdowns, prevention guidance, cost/access info for vaccines, and local clinic/pharmacy resources. Data is sourced from 12 public feeds (CDC, FDA, CMS) and published as flat HTML/JSON with no live server.
 
 ## Architecture
 
-**Stack:** React frontend + C#/.NET backend API (clean separation)
+**Model:** Local data pipeline + static site export. No live server, no database, no auth in production.
 
 ```
 sniffle-report/
 ├── src/
-│   ├── frontend/          # React app (Vite + TypeScript)
-│   └── backend/           # ASP.NET Core Web API (C#)
+│   ├── frontend/          # React app (Vite + TypeScript) — builds to static HTML/JS
+│   └── backend/           # ASP.NET Core API (local only — data pipeline + export)
 ├── tests/
-│   ├── frontend/          # Jest/Vitest tests
-│   └── backend/           # xUnit tests
-└── docker-compose.yml     # Local dev orchestration
+│   ├── frontend/          # Vitest tests
+│   └── backend/           # xUnit tests (92 tests)
+├── static-site/           # Generated output (git-ignored) — deploy this folder
+├── static-export/         # Generated JSON data (git-ignored)
+├── export.sh              # Build script: sync → export → build ��� assemble
+├── docker-compose.yml     # Local dev orchestration
+├── ARCHITECTURE.md        # Full architecture documentation
+└── CLAUDE.md              # This file
 ```
 
-### Backend (ASP.NET Core)
+### Local Backend (Never Published)
 
-- REST API with controllers for: regions, health alerts, disease trends, resources (clinics/pharmacies), admin content management, fact-checking
-- Entity Framework Core for data access
-- Regional data model: alerts and trends are scoped to geographic regions
-- Admin endpoints behind authentication/authorization
-- Fact-check pipeline: health news claims verified against trusted sources (CDC, WHO, state health departments)
+- .NET 8 API running in Docker with PostgreSQL — local only
+- 12 feed connectors (CDC Socrata, CDC/FDA RSS, CMS NPI Registry, openFDA)
+- Background services: feed polling (60s check) + snapshot builder (post-sync rebuild)
+- `RegionSnapshotBuilder`: precomputes dashboards for all 3,205 regions
+- `StaticSiteExporter`: dumps snapshots to ~3,265 JSON files
+- Admin endpoints for content management (local use only — no auth needed)
 
-### Frontend (React + TypeScript)
+### Published Frontend (Static Site)
 
-- Region selector drives all views — user picks their area, sees local data
-- Key views: regional dashboard, disease trend detail, prevention/cost info, local resources map, admin panel
-- API client layer talks to the .NET backend
+- React SPA reading from `/data/*.json` files — no API calls
+- Browse-based navigation: Home (state grid) → State (county table) → County (dashboard)
+- No search, no authentication, no dynamic behavior
+- Total output: ~3,282 files, ~14 MB
 
 ### Key Domain Concepts
 
-- **Region**: Geographic area (zip, county, or metro area) that scopes all health data
-- **Health Alert**: Admin-published alert about a disease trend in a region (e.g., "Chickenpox: 47 cases in Travis County")
-- **Prevention Guide**: What-to-do content with cost info (free, $20, grocery store clinic deals)
-- **Local Resource**: Clinics, pharmacies, vaccination sites — geocoded to regions
-- **Fact Check**: Verification status and source links attached to health news items
+- **Region**: Geographic area (state or county) that scopes all health data (3,205 regions)
+- **RegionSnapshot**: Precomputed dashboard per region with JSONB columns for alerts, trends, resources, news
+- **Health Alert**: Disease surveillance data from CDC/FDA feeds
+- **Local Resource**: Clinics, pharmacies, hospitals from NPI Registry (24K+ providers)
+- **News Item**: Health news, food/drug recalls from RSS feeds with fact-check status
 
 ## Build & Run Commands
 
 ```bash
-# Backend
-dotnet restore src/backend/
+# Full static site export (the main workflow)
+./export.sh                          # sync feeds → export JSON → build frontend → assemble
+
+# Preview static site
+npx serve static-site
+
+# Backend (local data pipeline)
+docker-compose up                    # start PostgreSQL + API + frontend
 dotnet build src/backend/
-dotnet run --project src/backend/
-dotnet test tests/backend/
-dotnet test tests/backend/ --filter "FullyQualifiedName~ClassName.TestName"  # single test
+dotnet test tests/backend/           # 92 tests
 
 # Frontend
 cd src/frontend && npm install
-cd src/frontend && npm run dev        # dev server
-cd src/frontend && npm run build      # production build
-cd src/frontend && npm test           # all tests
-cd src/frontend && npm test -- --run TestFile.test.ts  # single test file
+cd src/frontend && npm run build     # production build
+cd src/frontend && npm test          # 21 tests
 
-# Full stack (once docker-compose exists)
-docker-compose up
+# Trigger manual export
+curl -X POST http://localhost:5001/api/v1/export/static
 ```
 
-## Secure Coding Standards
+## Data Sources (12 Active Feeds)
 
-- **React frontend**: Zod validation on API responses, `validateAndSanitizeUrl` on all URLs, no `dangerouslySetInnerHTML`, CSP-compatible, explicit prop destructuring
-- **ASP.NET Core backend**: Fallback deny-all authorization, dedicated DTOs (never bind/return entities), FluentValidation, rate limiting, ProblemDetails for errors, structured logging with PII redaction
+| Source | Type | Data |
+|--------|------|------|
+| CDC NNDSS Weekly Tables | Socrata | 50+ diseases, state-level |
+| CDC Wastewater Surveillance | Socrata | COVID wastewater, county-level |
+| CDC PLACES County Health | Socrata | 29 chronic disease measures |
+| CDC Drug Overdose Deaths | Socrata | Provisional overdose counts |
+| CDC Food Safety / Outbreak Alerts | RSS | Food safety + outbreak news |
+| FDA Drug / Food Recalls | RSS | Recall alerts |
+| NPI Registry (CMS) | REST | 24K+ pharmacies, clinics, hospitals |
+| openFDA Drug Enforcement | REST | Drug recall actions |
 
-See ARCHITECTURE.md Section 7 for the full security architecture and threat model (issue #4).
+## Security Model
 
-### Security Rules (Non-Negotiable)
+**Published site has zero attack surface** — no server, no database, no API, no auth, no user input processing. All files are pre-generated and immutable.
 
-- **Audit logging**: every admin write operation (create, update, delete, status change) must produce an `AuditLogEntry` in the same database transaction. No exceptions.
-- **Soft deletes**: health content entities (alerts, news, fact-checks, prevention guides) use `IsDeleted`/`DeletedAt`/`DeletedBy` — never hard delete without SuperAdmin role
-- **Refresh tokens in HttpOnly cookies** — never in JS memory, localStorage, or sessionStorage
-- **MFA required** for all admin accounts (TOTP-based)
-- **Two admin roles**: `Admin` (content CRUD) and `SuperAdmin` (account management, audit access, hard deletes)
-- **ReDoS prevention**: `RegexOptions.NonBacktracking` on any regex evaluated against user input
-- **Query limits**: trend endpoints enforce max date range (1 year); search endpoints enforce max query length (200 chars)
-- **PII redaction**: admin emails, passwords, tokens, MFA codes never appear in logs. See ARCHITECTURE.md Section 3 for full PII classification.
+**Local pipeline** runs only on operator's machine with standard dev security (local-only PostgreSQL, no inbound connections).
 
 ## Development Guidelines
 
-- All health data endpoints must be region-scoped — never return unfiltered national data as a default
-- Admin/content-management endpoints require `[Authorize(Roles = "Admin")]`; public read endpoints are `[AllowAnonymous]`
-- Admin routes return 404 (not 401/403) to unauthenticated users
-- Fact-check status is a first-class field on health news items, not an afterthought
-- Fact-check verdict changes require justification and produce a `FactCheckHistory` entry
-- Disease case counts and trend data must include source attribution (which health department, date of data)
-- Cost/access info for vaccines and preventive care must distinguish between free, insured, and out-of-pocket pricing
-- Local resource data (clinics, pharmacies) needs geocoding for regional filtering
-- Input validation on all API boundaries; output encoding on all rendered content (XSS prevention)
-- Use parameterized queries / EF Core — no raw SQL string concatenation
-- CORS configured explicitly for the frontend origin only
-- CI uses `npm ci` (not `npm install`) to enforce lockfile integrity
-
-## Phase 2 Considerations
-
-- Mobile-responsive design from the start (use responsive patterns in Phase 1)
-- API pagination and caching headers for scalability
-- Database indexing on region + date for trend queries
+- All health data is region-scoped — organized by state → county hierarchy
+- The published site reads ONLY from static JSON files at `/data/*.json`
+- No live API calls in shipped frontend code (verified by tree-shaking audit)
+- PLACES community health data prefixed with `[Community Health]` and excluded from top alerts
+- NPI resources mapped to counties via ZIP-to-county crosswalk (33K entries)
+- Feed connectors handle deduplication, multi-county mapping, fuzzy name matching
+- Source attribution required on all health data
+- Fact-check status carried through from feed sources

@@ -2,634 +2,298 @@
 
 ## 1. System Overview
 
+Sniffle Report uses a **local data pipeline + static site export** architecture. All data processing, feed ingestion, and database operations run locally on the operator's machine. The only thing published to the internet is flat HTML/CSS/JS + precomputed JSON files — no live server, no database, no API, no authentication surface.
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Public Internet                            │
-└──────────┬──────────────────────────────────┬───────────────────────┘
-           │                                  │
-           ▼                                  ▼
-┌─────────────────────┐          ┌─────────────────────────┐
-│   React Frontend    │          │   Admin Panel (React)    │
-│   (Vite + TS)       │          │   /admin routes          │
-│   Port 5173 (dev)   │          │   Auth-gated             │
-└────────┬────────────┘          └────────┬────────────────┘
-         │ HTTPS                          │ HTTPS + Bearer Token
-         ▼                                ▼
-┌──────────────────────────────────────────────────────────┐
-│              ASP.NET Core Web API (.NET 8)                │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌────────┐  │
-│  │ Public   │  │ Admin    │  │ Fact-Check│  │ Auth   │  │
-│  │Controllers│ │Controllers│ │ Service   │  │Middleware│ │
-│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └────────┘  │
-│       │              │              │                     │
-│  ┌────▼──────────────▼──────────────▼─────┐              │
-│  │         Service Layer                   │              │
-│  │  (RegionService, AlertService,          │              │
-│  │   TrendService, ResourceService,        │              │
-│  │   FactCheckService, PreventionService)  │              │
-│  └────────────────┬───────────────────────┘              │
-│                   │                                      │
-│  ┌────────────────▼───────────────────────┐              │
-│  │   Entity Framework Core (DbContext)     │              │
-│  └────────────────┬───────────────────────┘              │
-└───────────────────┼──────────────────────────────────────┘
-                    │
-         ┌──────────▼──────────┐
-         │   PostgreSQL 16     │
-         │   Port 5432         │
-         └─────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+���                    Local Machine (Operator)                    │
+│                                                              │
+│  ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │  PostgreSQL 16  ���  │  .NET 8 API  │  │  Background    │  │
+│  │  (local only)   │◄─│  (local only) │  │  Services      │  │
+│  └─────────────────┘  └──────┬───────┘  │  - Feed Poller │  │
+│                              │          │  - Snapshot     │  │
+│                              │          │    Builder      │  │
+│                              │          └────────────────┘  │
+│                              │                               │
+│  ┌───────────────────────────▼───────────────────────────┐  │
+│  │              Static Site Exporter                      │  │
+│  │  Reads snapshots → writes 3,265 JSON files (14 MB)    │  │
+│  └───────────────────────────┬───────────────────────────┘  │
+│                              │                               │
+│  ┌───────────────────────────▼───────────────────────────┐  │
+│  │              Vite Frontend Build                       │  │
+│  │  React SPA reads from /data/*.json (no API calls)     │  │
+│  └───────────────────────────┬───────────────────────────┘  │
+│                              │                               │
+│                    ┌─────────▼──────────┐                   │
+│                    │  static-site/      │                   │
+│                    │  3,282 files, 14MB │                   │
+│                    └─────────┬──────────┘                   │
+└──────────────────────────────┼───────────────────────────────┘
+                               │ git push / rsync / deploy
+                    ┌──────────▼──────────┐
+                    │  Static Host        │
+                    │  (GitHub Pages,     │
+                    │   Netlify, S3, etc) │
+                    │                     │
+                    │  No server runtime  │
+                    │  No database        │
+                    │  No authentication  │
+                    │  No API endpoints   │
+                    └─────────────────────┘
 
-External integrations (server-side outbound):
-  ├── CDC API / Data feeds
-  ├── State & county health department APIs
-  ├── WHO Disease Outbreak News
-  └── Geocoding service (for resource/region mapping)
+External Data Sources (fetched locally):
+  ├── CDC NNDSS Weekly Tables (Socrata)
+  ├── CDC Wastewater Surveillance (Socrata)
+  ├── CDC PLACES County Health (Socrata)
+  ├── CDC Provisional Drug Overdose Deaths (Socrata)
+  ├── CDC Food Safety Alerts (RSS)
+  ├── CDC Outbreak Alerts (RSS)
+  ├── FDA Drug Recalls (RSS)
+  ├── FDA Food and Safety Recalls (RSS)
+  ├── NPI Registry — Pharmacies (CMS REST API)
+  ├── NPI Registry — Clinics (CMS REST API)
+  ├── NPI Registry — Hospitals (CMS REST API)
+  └── openFDA Drug Enforcement (REST API)
 ```
 
-### User Flows
+### User Flow (Published Static Site)
 
-**Public user**: Selects region → views regional dashboard (active alerts, trend charts, prevention guides) → drills into specific disease or resource → finds local clinics/pharmacies with cost info.
+**Public user**: Browses state grid on homepage → selects state → browses county table → selects county → views regional dashboard (alerts, trends, prevention guides, resources, news) — all from precomputed JSON, no server interaction.
 
-**Admin user**: Logs in → creates/edits health alerts with case data and source attribution → attaches prevention guides with pricing tiers → manages local resources → submits health news items for fact-checking → reviews and publishes fact-check results.
+### Operator Flow (Local Machine)
+
+**Operator**: Runs `docker-compose up` → feeds sync automatically → snapshots rebuild → runs `./export.sh` → static site assembled → pushes to hosting.
 
 ---
 
-## 2. Backend Architecture (ASP.NET Core)
+## 2. Local Data Pipeline
 
-### API Layer
+### Background Services
 
-REST API versioned at the URL path level:
+Two `BackgroundService` instances run inside the .NET API container:
 
-```
-/api/v1/regions
-/api/v1/regions/{regionId}/alerts
-/api/v1/regions/{regionId}/trends
-/api/v1/regions/{regionId}/resources
-/api/v1/regions/{regionId}/prevention
-/api/v1/fact-checks
-/api/v1/admin/alerts          (auth required)
-/api/v1/admin/resources       (auth required)
-/api/v1/admin/prevention      (auth required)
-/api/v1/admin/fact-checks     (auth required)
-/api/v1/admin/news            (auth required)
-```
+| Service | Cadence | Purpose |
+|---------|---------|---------|
+| `FeedPollingBackgroundService` | 60s check interval | Polls 12 feed sources on their individual schedules. After all syncs complete, triggers snapshot rebuild if any data changed. |
+| `RegionSnapshotBuilderBackgroundService` | 5 min (safety net) | Rebuilds all 3,205 region snapshots. Skips if no new `FeedSyncLog` entries since last build. |
 
-All public health data endpoints are scoped to a region. There is no unscoped `/alerts` endpoint that returns national data.
+### Feed Connectors
 
-**Conventions:**
-- Controllers are thin — validate input, delegate to services, return DTOs
-- Request/response DTOs are separate from EF entities (no leaking DB models to the API surface)
-- Pagination via `?page=1&pageSize=25` on all list endpoints, returning `X-Total-Count` header
-- Filtering via query parameters: `?disease=chickenpox&dateFrom=2026-01-01`
-- API versioning via `Asp.Versioning.Mvc` NuGet package
+| Connector | Feed Sources | Output |
+|-----------|-------------|--------|
+| `CdcSocrataConnector` | NNDSS, Wastewater, PLACES, Overdose Deaths | HealthAlerts + DiseaseTrends |
+| `CdcRssConnector` | CDC RSS, FDA RSS | NewsItems + FactChecks |
+| `NpiRegistryConnector` | NPI Pharmacies, Clinics, Hospitals | LocalResources (24K+ providers) |
+| `OpenFdaConnector` | Drug Enforcement | NewsItems |
 
-### Service Layer
-
-Business logic lives in service classes, one per domain aggregate:
-
-| Service | Responsibility |
-|---------|---------------|
-| `RegionService` | Region lookup, geographic search ("near me" by zip/coordinates) |
-| `AlertService` | CRUD for health alerts, regional scoping, severity ranking |
-| `TrendService` | Time-series aggregation of case counts, trend calculation |
-| `ResourceService` | Local clinic/pharmacy CRUD, geocoding integration, proximity search |
-| `PreventionService` | Prevention guides with cost tiers (free/insured/out-of-pocket) |
-| `FactCheckService` | Fact-check pipeline orchestration (see Section 4) |
-| `NewsService` | Health news item ingestion and management |
-
-Services are registered as scoped dependencies in DI. Services depend on repositories (or DbContext directly), never on controllers or other HTTP concerns.
-
-### Data Access Layer
-
-**ORM:** Entity Framework Core 8 with code-first migrations.
-
-**Pattern:** DbContext injected directly into services (no generic repository wrapper). EF Core's `DbSet<T>` already implements the repository and unit-of-work patterns. Custom query methods live as extension methods on `IQueryable<T>` for reuse.
+### Ingestion Pipeline
 
 ```
-src/backend/
-├── Controllers/
-│   ├── Public/
-│   │   ├── RegionsController.cs
-│   │   ├── AlertsController.cs
-│   │   ├── TrendsController.cs
-│   │   ├── ResourcesController.cs
-│   │   └── PreventionController.cs
-│   └── Admin/
-│       ├── AdminAlertsController.cs
-│       ├── AdminResourcesController.cs
-│       ├── AdminPreventionController.cs
-│       ├── AdminNewsController.cs
-│       └── AdminFactChecksController.cs
-├── Services/
-│   ├── RegionService.cs
-│   ├── AlertService.cs
-│   ├── TrendService.cs
-│   ├── ResourceService.cs
-│   ├── PreventionService.cs
-│   ├── FactCheckService.cs
-│   └── NewsService.cs
-├── Models/
-│   ├── Entities/          # EF Core entities
-│   ├── DTOs/              # Request/response DTOs
-│   └── Enums/
-├── Data/
-│   ├── AppDbContext.cs
-│   ├── Migrations/
-│   └── QueryExtensions/   # IQueryable extension methods
-├── Auth/
-│   └── ...
-└── Program.cs
+Feed Source → Connector.FetchAsync() → NormalizedFeedRecord[]
+  → IngestionService.ProcessRecordAsync()
+    → Deduplicate (SHA-256 hash + external ID)
+    → Map jurisdiction to Region (RegionMappingService)
+    → Create/update HealthAlert, DiseaseTrend, NewsItem, or LocalResource
+    → Evaluate alert thresholds (AlertThresholdService)
+  → FeedPollingBackgroundService triggers RegionSnapshotBuilder.RebuildAllAsync()
 ```
 
-### Authentication & Authorization
+### Region Snapshot System
 
-**Provider:** ASP.NET Core Identity with JWT bearer tokens.
+The `RegionSnapshotBuilder` precomputes a denormalized dashboard for every region:
 
-- Admin users are stored in the Identity database tables
-- Login endpoint issues a short-lived JWT (15 min) + refresh token (7 days)
-- **Access tokens (JWT)** are stored in JavaScript memory only — never `localStorage` or `sessionStorage`
-- **Refresh tokens** are delivered via `HttpOnly`, `Secure`, `SameSite=Strict` cookies — never accessible to JavaScript. The refresh endpoint reads the cookie server-side and issues a new JWT.
-- **MFA required for all admin accounts** — TOTP-based (e.g., ASP.NET Core Identity + authenticator app). No SMS-based MFA. MFA enrollment enforced on first admin login.
-- Two admin roles:
-  - `Admin` — content CRUD (alerts, prevention guides, resources, news, fact-checks)
-  - `SuperAdmin` — Admin account management, role assignment, audit log access, system configuration
-- Admin endpoints require `[Authorize(Roles = "Admin")]` minimum; account management endpoints require `[Authorize(Roles = "SuperAdmin")]`
-- Public endpoints are anonymous — no auth required to read health data
-- Admin routes return `404` (not `401`/`403`) to unauthenticated users — do not reveal admin surface existence
-- Phase 2: API keys for mobile clients (issued per-device, rate-limited separately)
+- Batch-loads all alerts, trends, news, prevention guides, and resources
+- Builds full region hierarchy map (BFS traversal for parent→child rollup)
+- For each of 3,205 regions: collects data from all descendant regions, computes top alerts, WoW trend changes, resource counts, prevention highlights, news highlights
+- Upserts one `RegionSnapshot` row per region with JSONB columns
+- Typical rebuild: ~400ms for all 3,205 regions
 
-**Why JWT over cookies for access tokens:** The frontend is a separate SPA origin, and JWT avoids CSRF complexity for API requests. The refresh token uses a cookie to prevent XSS-based theft — the access token's short lifespan (15 min) limits the damage window if exfiltrated from memory.
+### Static Export
 
-### Database
+`StaticSiteExporter` reads from the database and writes JSON files:
 
-**Choice: PostgreSQL 16**
+| Output File | Content |
+|-------------|---------|
+| `data/states.json` | Index of all states with county counts and alert summaries |
+| `data/states/{CODE}.json` | Per-state county list with snapshot summaries |
+| `data/regions/{ID}.json` | Full dashboard snapshot per region (3,205 files) |
+| `data/status.json` | Feed sync status and coverage summary |
+| `data/news.json` | National-level news items |
 
-Rationale:
-- Native full-text search (used for searching alerts and resources by keyword) — avoids adding Elasticsearch in Phase 1
-- PostGIS extension available for geographic queries in Phase 2 if needed
-- `jsonb` columns for semi-structured data (e.g., cost tiers on prevention guides that vary by provider)
-- Strong EF Core support via Npgsql provider
-- Free, open source, widely deployed
+Total: ~3,265 JSON files, ~14 MB.
 
 ---
 
-## 3. Database Schema
+## 3. Database Schema (Local Only)
 
-```
-┌──────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│   Region     │       │   HealthAlert    │       │  DiseaseTrend    │
-├──────────────┤       ├──────────────────┤       ├──────────────────┤
-│ Id (PK)      │◄──┐   │ Id (PK)          │       │ Id (PK)          │
-│ Name         │   ├───│ RegionId (FK)    │   ┌───│ AlertId (FK)     │
-│ Type (enum)  │   │   │ Disease          │   │   │ Date             │
-│ State        │   │   │ Title            │───┘   │ CaseCount        │
-│ Latitude     │   │   │ Summary          │       │ Source           │
-│ Longitude    │   │   │ Severity (enum)  │       │ SourceDate       │
-│ ParentId(FK) │   │   │ CaseCount        │       │ Notes            │
-└──────────────┘   │   │ SourceAttribution│       └──────────────────┘
-                   │   │ SourceDate       │
-                   │   │ Status (enum)    │
-                   │   │ CreatedAt        │
-                   │   │ UpdatedAt        │
-                   │   └──────────────────┘
-                   │
-                   │   ┌──────────────────┐       ┌──────────────────┐
-                   │   │ PreventionGuide  │       │   CostTier       │
-                   │   ├──────────────────┤       ├──────────────────┤
-                   ├───│ RegionId (FK)    │       │ Id (PK)          │
-                   │   │ Id (PK)          │◄──────│ GuideId (FK)     │
-                   │   │ Disease          │       │ Type (enum)      │
-                   │   │ Title            │       │ Price            │
-                   │   │ Content (text)   │       │ Provider         │
-                   │   │ CreatedAt        │       │ Notes            │
-                   │   └──────────────────┘       └──────────────────┘
-                   │
-                   │   ┌──────────────────┐
-                   │   │  LocalResource   │
-                   │   ├──────────────────┤
-                   ├───│ RegionId (FK)    │
-                   │   │ Id (PK)          │
-                   │   │ Name             │
-                   │   │ Type (enum)      │  Clinic | Pharmacy | VaccinationSite
-                   │   │ Address          │
-                   │   │ Phone            │
-                   │   │ Website          │
-                   │   │ Latitude         │
-                   │   │ Longitude        │
-                   │   │ Hours (jsonb)    │
-                   │   │ Services (jsonb) │
-                   │   └──────────────────┘
-                   │
-                   │   ┌──────────────────┐       ┌──────────────────┐
-                   │   │   NewsItem       │       │   FactCheck      │
-                   │   ├──────────────────┤       ├──────────────────┤
-                   └───│ RegionId (FK)    │       │ Id (PK)          │
-                       │ Id (PK)          │◄──────│ NewsItemId (FK)  │
-                       │ Headline         │       │ Status (enum)    │
-                       │ Content          │       │ Verdict          │
-                       │ SourceUrl        │       │ Sources (jsonb)  │
-                       │ PublishedAt      │       │ CheckedAt        │
-                       │ CreatedAt        │       │ CheckedBy        │
-                       └──────────────────┘       └──────────────────┘
-```
+The PostgreSQL database runs only on the operator's machine. It is never exposed to the internet.
 
-### Enums
+### Core Entities
 
-| Enum | Values |
-|------|--------|
-| `RegionType` | `Zip`, `County`, `Metro`, `State` |
-| `AlertSeverity` | `Low`, `Moderate`, `High`, `Critical` |
-| `AlertStatus` | `Draft`, `Published`, `Archived` |
-| `ResourceType` | `Clinic`, `Pharmacy`, `VaccinationSite`, `Hospital` |
-| `CostTierType` | `Free`, `Insured`, `OutOfPocket`, `Promotional` |
-| `FactCheckStatus` | `Pending`, `Verified`, `Disputed`, `Unverified` |
+| Entity | Purpose | Count |
+|--------|---------|-------|
+| `Region` | Geographic hierarchy (State → County) | 3,205 |
+| `RegionSnapshot` | Precomputed dashboard per region (JSONB) | 3,205 |
+| `HealthAlert` | Disease surveillance alerts | ~16,000 |
+| `DiseaseTrend` | Time-series case count data points | ~16,000 |
+| `LocalResource` | Clinics, pharmacies, hospitals (from NPI) | ~24,000 |
+| `NewsItem` | Health news, food/drug recalls | ~190 |
+| `FactCheck` | Verification status on news items | ~190 |
+| `PreventionGuide` | Prevention guidance with cost tiers | ~4 (seed) |
+| `FeedSource` | Feed configuration (URL, interval, status) | 12 |
+| `FeedSyncLog` | Historical sync results per feed | Growing |
+| `IngestedRecord` | Deduplication tracking (SHA-256 hash) | ~35,000 |
+| `AuditLogEntry` | All admin/system write operations | Growing |
 
-### Key Indexes
+### Embedded Data Files
 
-```sql
--- Core query patterns: "alerts in my region, most recent first"
-CREATE INDEX IX_HealthAlert_RegionId_CreatedAt ON HealthAlerts (RegionId, CreatedAt DESC);
-CREATE INDEX IX_DiseaseTrend_AlertId_Date ON DiseaseTrends (AlertId, Date DESC);
-CREATE INDEX IX_LocalResource_RegionId_Type ON LocalResources (RegionId, Type);
-CREATE INDEX IX_NewsItem_RegionId_PublishedAt ON NewsItems (RegionId, PublishedAt DESC);
-
--- Full-text search on alerts and resources
-CREATE INDEX IX_HealthAlert_FTS ON HealthAlerts USING GIN (to_tsvector('english', Title || ' ' || Summary));
-CREATE INDEX IX_LocalResource_FTS ON LocalResources USING GIN (to_tsvector('english', Name || ' ' || Address));
-```
-
-### Region Hierarchy
-
-Regions form a tree: State → County → Zip/Metro. The `ParentId` self-referential FK enables:
-- A user selecting "Travis County" sees all alerts for Travis County AND its child zip codes
-- State-level rollup views that aggregate child region data
-- Admin can publish an alert at any level in the hierarchy
-
-### Audit Log
-
-All admin write operations are recorded in an immutable, append-only audit log:
-
-```
-┌──────────────────────┐
-│     AuditLogEntry    │
-├──────────────────────┤
-│ Id (PK)              │
-│ AdminId (FK → User)  │
-│ Action (enum)        │  Create | Update | Delete | StatusChange | RoleChange | Login | FailedLogin
-│ EntityType (string)  │  "HealthAlert", "FactCheck", "NewsItem", etc.
-│ EntityId (Guid)      │
-│ Timestamp (UTC)      │
-│ BeforeJson (jsonb)   │  Snapshot of entity state before the change (null for Create)
-│ AfterJson (jsonb)    │  Snapshot of entity state after the change (null for Delete)
-│ IpAddress (string)   │
-│ UserAgent (string)   │
-│ Justification (text) │  Required for verdict changes and deletions
-└──────────────────────┘
-```
-
-**Rules:**
-- Audit log table has no `UPDATE` or `DELETE` permissions for application accounts — append-only at the DB level
-- Audit log entries are written in the same transaction as the mutation they record
-- SuperAdmin-only endpoint to query/export audit logs; no API to modify or delete entries
-- Retention: minimum 2 years for health data integrity compliance
-
-### Soft Deletes & Content Versioning
-
-All health content entities (`HealthAlert`, `PreventionGuide`, `NewsItem`, `FactCheck`) use soft deletes:
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `IsDeleted` | bool | Filters entity from public queries |
-| `DeletedAt` | DateTime? | When the soft delete occurred |
-| `DeletedBy` | Guid? | Admin who performed the deletion |
-
-Hard deletes require `SuperAdmin` role, produce an audit log entry, and are only permitted after the soft-delete retention period (90 days minimum).
-
-`FactCheck` records additionally track verdict history — every status change appends to a `FactCheckHistory` table:
-
-```
-┌──────────────────────┐
-│  FactCheckHistory    │
-├──────────────────────┤
-│ Id (PK)              │
-│ FactCheckId (FK)     │
-│ PreviousStatus       │
-│ NewStatus            │
-│ ChangedBy (FK→User)  │
-│ ChangedAt (UTC)      │
-│ Justification (text) │
-│ Sources (jsonb)      │  Snapshot of sources at time of change
-└──────────────────────┘
-```
-
-### PII Classification
-
-The following fields are classified as PII and **must** be redacted in logs:
-
-| Category | Fields | Log Treatment |
-|----------|--------|---------------|
-| Admin identity | Email, full name | Hash or redact — log admin ID only |
-| Network | IP address | Allowed in auth event logs only; redacted elsewhere |
-| Auth | Passwords, tokens, MFA codes | Never logged under any circumstance |
-| User-submitted | Form inputs, search queries | Redacted unless explicitly needed for debugging (and then only at Debug level, disabled in production) |
+| File | Content | Size |
+|------|---------|------|
+| `Data/SeedData/us-counties.json` | 3,143 US counties with FIPS codes and centroids | 301 KB |
+| `Data/SeedData/zip-to-county.json` | 33,048 ZIP-to-county mappings for NPI geocoding | 945 KB |
 
 ---
 
-## 4. Fact-Check Pipeline
+## 4. Frontend Architecture (Static Site)
 
-### Workflow
+### Published Pages
 
-```
-┌─────────────┐     ┌─────────────┐     ┌───────────────┐     ┌─────────────┐
-│ News Item   │────▶│  Claim      │────▶│  Source        │────▶│  Verdict    │
-│ Submitted   │     │  Extraction │     │  Matching      │     │  Assignment │
-│ (Admin)     │     │             │     │                │     │             │
-│ Status:     │     │ Identify    │     │ Search trusted │     │ Verified /  │
-│ Pending     │     │ checkable   │     │ source registry│     │ Disputed /  │
-│             │     │ claims      │     │ for supporting │     │ Unverified  │
-│             │     │             │     │ or refuting    │     │             │
-└─────────────┘     └─────────────┘     │ evidence       │     └──────┬──────┘
-                                        └───────────────┘            │
-                                                                     ▼
-                                                              ┌─────────────┐
-                                                              │  Published  │
-                                                              │  with       │
-                                                              │  sources &  │
-                                                              │  verdict    │
-                                                              └─────────────┘
-```
+The frontend is a React SPA that reads exclusively from static JSON files at `/data/*.json`. No live API calls, no authentication, no search backend.
 
-### Phase 1 Implementation (Admin-Driven)
+| Route | Page | Data Source |
+|-------|------|-------------|
+| `/` | Homepage — state grid | `data/states.json` |
+| `/states/:code` | State page — county table | `data/states/{code}.json` |
+| `/region/:id` | County dashboard | `data/regions/{id}.json` |
+| `/status` | System status | `data/status.json` + `data/states.json` |
 
-In Phase 1, fact-checking is a manual editorial workflow, not an automated AI pipeline:
-
-1. **Submission**: Admin enters a health news item with its source URL and headline
-2. **Claim extraction**: Admin identifies the key health claims in the item (e.g., "flu cases up 40% in Dallas County")
-3. **Source matching**: Admin searches the trusted source registry and attaches supporting or refuting evidence from official sources
-4. **Verdict**: Admin assigns a `FactCheckStatus` (Verified, Disputed, Unverified) and writes a brief verdict summary
-5. **Publication**: The news item is published with its fact-check status, verdict, and linked sources visible to public users
-
-### Trusted Source Registry
-
-A curated list of authoritative health data sources, stored in the database:
-
-| Source | Type | URL Pattern |
-|--------|------|-------------|
-| CDC | Federal | cdc.gov |
-| WHO | International | who.int |
-| State health departments | State | varies by state |
-| County health departments | County | varies by county |
-| FDA | Federal | fda.gov |
-| NIH / PubMed | Research | pubmed.ncbi.nlm.nih.gov |
-
-Each fact-check record stores its sources as a `jsonb` array with URL, title, access date, and relevance note.
-
-### Phase 2 Enhancement
-
-Automated assistance: integrate an LLM to suggest matching sources for claims, with admin review before publication. The manual workflow remains the authority — automation assists, doesn't replace.
-
----
-
-## 5. Frontend Architecture (React + TypeScript)
-
-### Build Tooling
-
-**Vite** with TypeScript strict mode. No Create React App.
-
-### Routing
-
-React Router v6 with region-scoped URL structure:
-
-```
-/                                   → Landing / region selector
-/region/:regionId                   → Regional dashboard
-/region/:regionId/alerts            → Alert list
-/region/:regionId/alerts/:alertId   → Alert detail + trend chart
-/region/:regionId/prevention        → Prevention guides
-/region/:regionId/resources         → Local clinics & pharmacies
-/region/:regionId/news              → Health news + fact-check status
-/admin                              → Admin login
-/admin/dashboard                    → Admin dashboard
-/admin/alerts                       → Manage alerts
-/admin/resources                    → Manage resources
-/admin/prevention                   → Manage prevention guides
-/admin/news                         → Manage news + fact-checks
-```
-
-### State Management
-
-**TanStack Query (React Query)** for server state — API data fetching, caching, and synchronization. No Redux.
-
-- Region context stored in a React context provider (set by URL param and region selector)
-- TanStack Query caches are keyed by `[entity, regionId, filters]`
-- Stale time: 5 minutes for public data (health alerts don't change second-by-second)
-- Admin mutations invalidate related query caches on success
-
-**Why not Redux:** The app is read-heavy with server-driven data. TanStack Query handles caching, loading states, and revalidation out of the box. The only client-side state is the selected region and UI state (modals, form drafts), which React context and local state handle fine.
-
-### API Client
-
-A typed client layer in `src/frontend/src/api/`:
-
-```
-api/
-├── client.ts          # Axios instance with base URL, auth interceptor, error handling
-├── types.ts           # TypeScript interfaces matching backend DTOs
-├── regions.ts         # getRegions(), getRegionById(), searchRegions()
-├── alerts.ts          # getAlerts(), getAlertById()
-├── trends.ts          # getTrends()
-├── resources.ts       # getResources(), searchNearby()
-├── prevention.ts      # getPreventionGuides()
-├── news.ts            # getNews(), getFactCheck()
-└── admin.ts           # Admin CRUD operations (auth required)
-```
-
-Axios interceptor attaches the JWT from memory on each request. On 401 response, the interceptor attempts a silent token refresh; on failure, redirects to login.
-
-### Component Architecture
+### Data Layer
 
 ```
 src/frontend/src/
-├── components/
-│   ├── layout/            # AppShell, Header, Footer, Sidebar
-│   ├── region/            # RegionSelector, RegionContext
-│   ├── alerts/            # AlertCard, AlertList, AlertDetail, SeverityBadge
-│   ├── trends/            # TrendChart (line chart), CaseCountTable
-│   ├── prevention/        # PreventionCard, CostTierBadge
-│   ├── resources/         # ResourceCard, ResourceList, ResourceMap
-│   ├── news/              # NewsCard, FactCheckBadge, SourceList
-│   └── shared/            # Pagination, LoadingSpinner, ErrorBoundary, EmptyState
-├── pages/                 # Route-level page components (compose from above)
-├── admin/                 # Admin-specific pages and components
-├── hooks/                 # Custom hooks (useRegion, useAuth, etc.)
-├── api/                   # API client (see above)
-└── utils/                 # Date formatting, geographic helpers
+├── api/
+│   └── staticClient.ts     # fetchStaticJson() — reads from /data/*.json
+├── hooks/
+│   └── useStaticData.ts     # useStates(), useStateDetail(), useStaticDashboard(), etc.
+├── pages/
+│   ├── HomePage.tsx          # State grid (51 states)
+│   ├── StateBrowsePage.tsx   # County table for a state
+│   ├── RegionalDashboardPage.tsx  # Dashboard with alerts, trends, resources, news
+│   ├── StatusPage.tsx        # Feed sync status + coverage
+│   └── NotFoundPage.tsx
+└── components/
+    ├── dashboard/SeverityBadge.tsx
+    └── news/FactCheckBadge.tsx
 ```
 
-### Charting
+### What's NOT in the Published Bundle
 
-**Recharts** for trend line charts and case count visualizations. Lightweight, React-native, no D3 dependency overhead.
+The following exist in the source tree for local development but are **not shipped** in the static build (verified by tree-shaking audit):
+
+- Axios HTTP client (`api/client.ts`)
+- Live API hooks (`useAlerts`, `useTrends`, `useResources`, etc.)
+- Authentication code (JWT tokens, refresh logic)
+- Search components (`RegionSearchPanel`, `RegionSelector`)
+- Admin panel pages
+- AppShell / Header with region selector
 
 ---
 
-## 6. Infrastructure & DevOps
+## 5. Build & Deploy Pipeline
 
-### Local Development
+### Export Script (`export.sh`)
 
-```yaml
-# docker-compose.yml
-services:
-  db:
-    image: postgres:16
-    ports: ["5432:5432"]
-    environment:
-      POSTGRES_DB: snifflereport
-      POSTGRES_USER: sniffle
-      POSTGRES_PASSWORD: localdev
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+```bash
+#!/bin/bash
+# 1. Start local docker services (PostgreSQL + .NET API)
+docker-compose up -d
 
-  api:
-    build: ./src/backend
-    ports: ["5000:5000"]
-    environment:
-      ConnectionStrings__Default: "Host=db;Database=snifflereport;Username=sniffle;Password=localdev"
-      ASPNETCORE_ENVIRONMENT: Development
-    depends_on: [db]
-
-  frontend:
-    build: ./src/frontend
-    ports: ["5173:5173"]
-    environment:
-      VITE_API_URL: http://localhost:5000/api/v1
-    depends_on: [api]
-
-volumes:
-  pgdata:
+# 2. Wait for API readiness
+# 3. Trigger static export (POST /api/v1/export/static)
+# 4. Copy JSON from container to host
+# 5. Build frontend (Vite production build)
+# 6. Assemble static-site/ directory (HTML + CSS + JS + JSON)
 ```
 
-### Environment Configuration
+Output: `static-site/` directory ready for deployment.
 
-| Layer | Mechanism | Secrets |
-|-------|-----------|---------|
-| Backend | `appsettings.json` + `appsettings.{Environment}.json` | Connection strings, JWT signing key via environment variables or user-secrets in dev |
-| Frontend | `.env` files (VITE_-prefixed) | No secrets — only the API base URL |
-| Docker | `docker-compose.override.yml` for local overrides | Local-only passwords, never committed |
+### Deployment Options
 
-### CI/CD Pipeline
+| Host | Method | Cost |
+|------|--------|------|
+| GitHub Pages | `git push` to gh-pages branch | Free |
+| Netlify | Drag-and-drop or git deploy | Free tier |
+| AWS S3 + CloudFront | `aws s3 sync` | ~$1/month |
+| Any static host | Upload `static-site/` folder | Varies |
 
-GitHub Actions with two workflows:
+### Update Cadence
 
-**ci.yml** (on push/PR to main):
-1. Backend: `dotnet restore` → `dotnet build` → `dotnet test`
-2. Frontend: `npm ci` → `npm run lint` → `npm run build` → `npm test`
-3. Both must pass for PR merge
-
-**deploy.yml** (on merge to main, Phase 2):
-1. Build Docker images
-2. Push to container registry
-3. Deploy to hosting environment
-
-### Logging & Monitoring
-
-- **Structured logging**: Serilog with JSON output, writing to console (Docker captures stdout)
-- **Log levels**: `Information` for request/response summaries, `Warning` for validation failures, `Error` for exceptions
-- **Health check endpoint**: `/health` returns API and database connectivity status
-- **Phase 2**: Add Application Insights or Seq for log aggregation, plus uptime monitoring
+Run `./export.sh` whenever you want fresh data. Typical workflow:
+1. Leave `docker-compose up` running (feeds sync automatically)
+2. Run `./export.sh` daily/weekly
+3. Push `static-site/` to hosting
 
 ---
 
-## 7. Security Architecture
+## 6. Security Model
 
-All code in this project follows mandatory secure coding standards:
+### Published Site (Zero Attack Surface)
 
-- **React frontend**: Follows the [Secure-by-Default React 19 Expert](../Manicode.ai/prompts/code%20security/Client%20Side%20Frameworks/ReactJS/00%20React19%20Secure%20Generator%20(JS).md) prompt
-- **ASP.NET Core backend**: Follows the [Secure C# ASP.NET Core API Developer](../Manicode.ai/prompts/code%20security/Backend%20Frameworks/DotNet/01%20Secure%20C%23%20ASP.NET%20Core%20API%20Developer.md) prompt
+The published static site has **no server-side code, no database, no API, no authentication**:
 
-### OWASP Top 10 Mapping
+- All files are pre-generated HTML/CSS/JS/JSON
+- No user input is processed server-side
+- No dynamic content generation
+- No credentials stored or transmitted
+- No CORS, no CSRF, no SSRF, no SQL injection — none of these apply
+- The only "security" concern is ensuring the published data is accurate (handled by the trusted source pipeline)
 
-| OWASP Category | Mitigation |
-|----------------|-----------|
-| A01 Broken Access Control | Fallback authorization policy: default-deny all endpoints. `[Authorize(Policy = "...")]` on all admin endpoints. Public endpoints explicitly marked `[AllowAnonymous]`. Prevent IDOR: filter at query level (`Where(o => o.Id == id && o.UserId == userId)`). Return 404 for inaccessible resources. |
-| A02 Cryptographic Failures | HTTPS enforced via HSTS; OAuth2/OIDC token validation with pinned algorithms (`ValidAlgorithms` set to expected signing algorithm), `ClockSkew = TimeSpan.Zero`; passwords hashed with ASP.NET Identity (PBKDF2 default). Refresh token rotation with reuse detection. |
-| A03 Injection | EF Core parameterized queries exclusively; no raw SQL. React JSX auto-escapes output. Never use `dangerouslySetInnerHTML` — use safe rendering libraries (e.g., react-markdown). Zod schema validation on all API responses before rendering in the frontend. |
-| A04 Insecure Design | Region-scoped data model prevents accidental data leakage across regions; admin and public APIs are separate controller groups. Never bind to entity/domain models — always use dedicated DTOs. Never return entity objects — project to DTOs with `Select()`. |
-| A05 Security Misconfiguration | CORS with `WithOrigins()` specific origins only — never `SetIsOriginAllowed(_ => true)`. Development secrets via user-secrets (not appsettings). Security headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`. Remove server headers: `AddServerHeader = false`. |
-| A06 Vulnerable Components | Dependabot enabled; `dotnet list package --vulnerable --include-transitive` in CI; `npm audit` in CI. Minimize frontend dependencies — prefer native platform or React features first. CI uses `npm ci` (not `npm install`) to enforce lockfile integrity. Pin NuGet package versions explicitly. |
-| A07 Auth Failures | Short-lived JWTs (15 min); refresh tokens via `HttpOnly`/`Secure`/`SameSite=Strict` cookies with rotation and reuse detection; account lockout after 5 failed attempts; TOTP-based MFA required for all admin accounts. Stricter rate limits on auth endpoints. |
-| A08 Data Integrity Failures | Fact-check sources include URL, access date, and admin attribution — audit trail for editorial decisions. Immutable audit log for all admin mutations (see Section 3). Soft deletes with content versioning on health data entities. `System.Text.Json` exclusively — never `BinaryFormatter`, `NetDataContractSerializer`, or `Newtonsoft.Json` with `TypeNameHandling`. |
-| A09 Logging Failures | Serilog structured logging with PII redaction; never string-interpolate log templates. Auth events (login, failed login, token refresh) logged at Information level. |
-| A10 SSRF | No user-supplied URLs fetched server-side in Phase 1; Phase 2 RSS ingestion will use an allowlist of domains. |
+### Local Pipeline (Operator's Machine Only)
 
-### Frontend Security Controls (React 19)
+The local data pipeline has a standard security posture appropriate for a development environment:
 
-- **All data is untrusted by default** — validate and sanitize every boundary (inputs, props, API responses)
-- **Zod schema validation** on all API responses before rendering
-- **URL protocol allowlist** via `validateAndSanitizeUrl` on all `href`, `src`, `formAction`, `action` attributes — only `https:`, `mailto:`, `tel:` allowed
-- **No `dangerouslySetInnerHTML`** — use react-markdown or equivalent safe rendering libraries
-- **CSP-compatible code**: no inline event handlers, no `data:` URIs in sinks, style via CSS Modules or atomic key-value pairs
-- **Explicit prop destructuring** — no `{...userProps}` on DOM elements; manually map validated attributes only
-- **Secure React keys** — never use attacker-controlled data as `key` props; use `crypto.randomUUID()` or server-provided stable IDs
-- **Race condition protection** — every async `useEffect` implements cleanup/ignore flag for stale data
-- **postMessage security** — verify `event.origin` and schema-validate `event.data` before acting
-- **React Router v7+** — gate all navigations through `validateAndSanitizeUrl`; map IDs to routes (no free-form paths)
-- **Dynamic CSS** — never inject raw CSS from users; use `CSS.escape()` for selectors
+- PostgreSQL with local-only credentials (never exposed to internet)
+- .NET API runs in Docker with no port forwarding to public networks
+- Admin operations are local-only (no auth needed — it's your machine)
+- Feed connectors make outbound HTTPS requests to trusted sources (CDC, FDA, CMS)
+- No inbound connections from the internet
 
-### Backend Security Controls (ASP.NET Core)
+### Data Integrity
 
-- **Fallback deny-all authorization policy**: `FallbackPolicy = RequireAuthenticatedUser().Build()`
-- **Explicit binding sources**: `[FromBody]`, `[FromQuery]`, `[FromRoute]`, `[FromHeader]` on all parameters
-- **FluentValidation** on all request DTOs; validate route, query, and header parameters
-- **Rate limiting** on all endpoints via `[EnableRateLimiting]` with `Retry-After` on 429 responses
-- **`ProblemDetails` for all errors** — never expose `ex.Message` or `ex.StackTrace` to clients
-- **`Cache-Control: no-store`** on all authenticated responses; never cache authenticated endpoint responses
-- **API keys**: store only SHA-256 hashes; present raw key once at creation; require in `Authorization` header or `X-API-Key`, never in query strings
-- **Request size limits**: `KestrelServerOptions.Limits.MaxRequestBodySize` with per-action `[RequestSizeLimit]`
-- **Pagination**: enforce max page size with `Math.Clamp()`; allow-list sort/filter fields
-- **Secrets**: load from vault services via `IOptions<T>`, never from source code
-- **ReDoS prevention**: use `RegexOptions.NonBacktracking` (.NET 7+) for any regex evaluated against user input; set `Regex` match timeout
-- **Query timeouts**: EF Core `CommandTimeout` set explicitly; trend aggregation queries enforce max date range (1 year) to prevent expensive scans
-- **Full-text search hardening**: max query length (200 chars); search endpoints rate-limited more aggressively than read endpoints; validate search input for FTS injection
-- **Audit logging**: all admin mutations written to append-only audit log in the same transaction (see Section 3)
-- **Soft deletes**: health content entities use `IsDeleted`/`DeletedAt`/`DeletedBy`; hard deletes require SuperAdmin role
-
-### Additional Security Controls
-
-- **Rate limiting**: ASP.NET Core rate limiting middleware — 100 req/min per IP on public endpoints, stricter on auth endpoints
-- **Input validation**: FluentValidation on all request DTOs; max lengths, allowed characters, enum range checks
-- **Content Security Policy**: CSP header restricting script sources to self; all frontend code CSP-compatible
-- **HTTPS**: HSTS with 1-year max-age; HTTP→HTTPS redirect
-- **Health checks**: separate liveness (unauthenticated, no details) from readiness (authenticated, dependency status) probes
+- Feed data sourced exclusively from official government APIs (CDC, FDA, CMS/NPI)
+- Deduplication via SHA-256 hash prevents duplicate ingestion
+- Audit log tracks all data mutations
+- Snapshot rebuild is deterministic — same database state produces same JSON output
+- Fact-check status carried through from feed source (CDC/FDA auto-verified)
 
 ---
 
-## 8. Phase 2 Readiness
+## 7. Data Sources
 
-### Mobile Strategy
+| Source | Organization | Type | Data | Update Interval |
+|--------|-------------|------|------|-----------------|
+| NNDSS Weekly Tables | CDC | Socrata | State-level disease case counts (50+ diseases) | 24h |
+| Wastewater Surveillance | CDC | Socrata | County-level COVID wastewater percentiles | 6h |
+| PLACES County Health | CDC | Socrata | 29 chronic disease measures per county | Weekly |
+| Drug Overdose Deaths | CDC | Socrata | State-level provisional overdose counts | Weekly |
+| Food Safety Alerts | CDC | RSS | Food safety outbreak news | 12h |
+| Outbreak Alerts | CDC | RSS | Disease outbreak news | 12h |
+| Drug Recalls | FDA | RSS | Drug recall alerts | 12h |
+| Food and Safety Recalls | FDA | RSS | Food/product recall alerts | 12h |
+| NPI Pharmacies | CMS | REST | 9,300+ pharmacies nationwide | 30d |
+| NPI Clinics | CMS | REST | 6,500+ urgent care clinics | 30d |
+| NPI Hospitals | CMS | REST | 8,400+ hospitals | 30d |
+| Drug Enforcement | openFDA | REST | Drug recall enforcement actions | 24h |
 
-Phase 1 builds with responsive-first CSS (Tailwind CSS utility classes). Phase 2 options:
+---
 
-| Option | Pros | Cons |
-|--------|------|------|
-| **PWA** (recommended) | Single codebase; installable; offline capable; push notifications | No app store presence; limited native API access |
-| React Native | Native performance; app store presence | Second codebase; shared logic needs extraction |
+## 8. Region Coverage
 
-Recommendation: **PWA** — the app is read-heavy informational content, not a native-feature-dependent experience. A service worker can cache the regional dashboard for offline access.
-
-### Scalability
-
-| Concern | Phase 1 (sufficient) | Phase 2 (scale) |
-|---------|---------------------|-----------------|
-| API caching | HTTP cache headers (Cache-Control, ETag) | Redis distributed cache for hot queries |
-| Database reads | Single PostgreSQL instance with proper indexing | Read replica for public endpoints |
-| Static assets | Vite production build | CDN (CloudFront / Cloudflare) |
-| API rate limiting | In-process rate limiter | Distributed rate limiter (Redis-backed) |
-| Search | PostgreSQL full-text search | Elasticsearch if FTS performance degrades |
-| Background jobs | N/A | Hangfire or .NET BackgroundService for RSS ingestion, automated fact-check suggestions |
-
-### Data Ingestion (Phase 2)
-
-- RSS feed ingestion from health department news feeds
-- Scheduled jobs to pull case count data from CDC/state APIs
-- Admin review queue for ingested items before publication
+- **51 states** (50 states + DC) with county data
+- **3,143 counties** (all US counties from Census Bureau FIPS data)
+- **5 metro areas** (Austin, Chicago, LA, Seattle, Atlanta)
+- **3,205 total regions** with precomputed dashboard snapshots
+- County-to-state hierarchy enables automatic rollup
+- NPI resources mapped to counties via 33K-entry ZIP-to-county crosswalk
