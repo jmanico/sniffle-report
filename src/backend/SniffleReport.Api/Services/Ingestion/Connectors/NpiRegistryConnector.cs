@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using SniffleReport.Api.Models.Entities;
 using SniffleReport.Api.Models.Enums;
@@ -9,6 +10,20 @@ public sealed class NpiRegistryConnector(
     ILogger<NpiRegistryConnector> logger) : IFeedConnector
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Lazy<Dictionary<string, string>> ZipToCounty = new(LoadZipToCountyLookup);
+
+    private static Dictionary<string, string> LoadZipToCountyLookup()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = assembly.GetManifestResourceNames()
+            .SingleOrDefault(n => n.EndsWith("zip-to-county.json", StringComparison.OrdinalIgnoreCase));
+
+        if (resourceName is null)
+            return new Dictionary<string, string>();
+
+        using var stream = assembly.GetManifestResourceStream(resourceName)!;
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(stream) ?? new();
+    }
 
     public FeedSourceType SourceType => FeedSourceType.NpiRegistry;
 
@@ -131,15 +146,21 @@ public sealed class NpiRegistryConnector(
         var phone = GetField(address.Value, "telephone_number");
         var fullAddress = $"{addr1}, {city}, {state} {zip}".Trim().Trim(',');
 
-        // Map to county using "City, State" as jurisdiction
-        var jurisdiction = $"{city}, {state}".Trim().Trim(',');
+        // Map to county using ZIP code lookup, fall back to state
+        var zip5 = zip?.Length >= 5 ? zip[..5] : null;
+        string? countyJurisdiction = null;
+        if (zip5 is not null)
+        {
+            ZipToCounty.Value.TryGetValue(zip5, out countyJurisdiction);
+        }
+        var jurisdiction = countyJurisdiction ?? state;
 
         return new NormalizedFeedRecord
         {
             ExternalSourceId = $"npi:{npi}",
             RawPayloadJson = provider.GetRawText(),
             RecordType = NormalizedRecordType.LocalResourceEntry,
-            JurisdictionName = state,
+            JurisdictionName = jurisdiction,
             ResourceName = name.Length > 200 ? name[..200] : name,
             Address = fullAddress.Length > 300 ? fullAddress[..300] : fullAddress,
             Phone = phone?.Length > 40 ? phone[..40] : phone,
