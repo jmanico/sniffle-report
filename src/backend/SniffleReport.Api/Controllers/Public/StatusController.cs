@@ -76,10 +76,20 @@ public sealed class StatusController(AppDbContext dbContext) : ControllerBase
             .GroupBy(log => log.FeedSourceId)
             .Select(g => g.OrderByDescending(log => log.StartedAt).First())
             .ToDictionaryAsync(log => log.FeedSourceId, cancellationToken);
+        var latestIngests = await dbContext.IngestedRecords
+            .AsNoTracking()
+            .GroupBy(record => record.FeedSourceId)
+            .Select(g => new
+            {
+                FeedSourceId = g.Key,
+                LastIngestedAt = g.Max(record => record.LastIngestedAt)
+            })
+            .ToDictionaryAsync(x => x.FeedSourceId, x => (DateTime?)x.LastIngestedAt, cancellationToken);
 
         var result = feeds.Select(feed =>
         {
             latestSyncs.TryGetValue(feed.Id, out var lastSync);
+            latestIngests.TryGetValue(feed.Id, out var lastIngestedAt);
 
             return new FeedStatusDto
             {
@@ -88,7 +98,7 @@ public sealed class StatusController(AppDbContext dbContext) : ControllerBase
                 Type = feed.Type.ToString(),
                 IsEnabled = feed.IsEnabled,
                 LastSyncStatus = feed.LastSyncStatus.ToString(),
-                LastSyncCompletedAt = feed.LastSyncCompletedAt,
+                LastSyncCompletedAt = feed.LastSyncCompletedAt ?? lastIngestedAt ?? lastSync?.CompletedAt ?? lastSync?.StartedAt,
                 ConsecutiveFailureCount = feed.ConsecutiveFailureCount,
                 LastRecordsCreated = lastSync?.RecordsCreated,
                 LastRecordsFetched = lastSync?.RecordsFetched,

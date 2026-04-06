@@ -24,13 +24,68 @@ function formatDateTime(date: string | null) {
   }).format(new Date(date))
 }
 
-function syncStatusClass(status: string | null): string {
-  switch (status) {
-    case 'Success': return 'status-sync--success'
-    case 'PartialSuccess': return 'status-sync--partial'
-    case 'Failed': return 'status-sync--failed'
-    case 'NeverRun': return 'status-sync--never'
-    default: return ''
+function getFeedStatus(feed: {
+  lastSyncStatus: string | null
+  lastSyncCompletedAt: string | null
+  lastRecordsFetched: number | null
+}) {
+  if (feed.lastSyncStatus === 'Failed') {
+    return {
+      label: 'Needs attention',
+      className: 'status-sync--failed',
+      detail: 'Latest refresh failed for this source.',
+    }
+  }
+
+  if (feed.lastSyncStatus === 'PartialSuccess') {
+    return {
+      label: 'Partial',
+      className: 'status-sync--partial',
+      detail: 'Some records refreshed, but the source needs review.',
+    }
+  }
+
+  if (feed.lastSyncCompletedAt) {
+    return {
+      label: 'Current',
+      className: 'status-sync--success',
+      detail: `Last refreshed ${formatRelative(feed.lastSyncCompletedAt)}.`,
+    }
+  }
+
+  if ((feed.lastRecordsFetched ?? 0) > 0) {
+    return {
+      label: 'Snapshot available',
+      className: 'status-sync--success',
+      detail: 'This source is included in the current published snapshot.',
+    }
+  }
+
+  return {
+    label: 'Pending',
+    className: 'status-sync--never',
+    detail: 'No published snapshot has been generated for this source yet.',
+  }
+}
+
+function formatFeedType(type: string) {
+  switch (type) {
+    case 'CdcSocrata':
+      return 'CDC dataset'
+    case 'CdcRss':
+      return 'Public alert feed'
+    case 'NpiRegistry':
+      return 'Provider registry'
+    case 'HrsaHealthCenter':
+      return 'HRSA clinic site directory'
+    case 'HrsaHpsa':
+      return 'HRSA shortage-area dataset'
+    case 'EpaSdwis':
+      return 'EPA drinking water dataset'
+    case 'OpenFda':
+      return 'FDA enforcement feed'
+    default:
+      return type
   }
 }
 
@@ -42,6 +97,8 @@ export function StatusPage() {
 
   const totalAlerts = states.reduce((sum, s) => sum + s.publishedAlertCount, 0)
   const totalResources = states.reduce((sum, s) => sum + s.resourceTotal, 0)
+  const currentFeedCount = status?.feeds.filter((feed) => getFeedStatus(feed).label !== 'Needs attention').length ?? 0
+  const totalFetched = status?.feeds.reduce((sum, feed) => sum + (feed.lastRecordsFetched ?? 0), 0) ?? 0
 
   return (
     <section className="page-frame">
@@ -70,45 +127,53 @@ export function StatusPage() {
         {statusQuery.isLoading ? (
           <p>Loading status...</p>
         ) : status ? (
-          <section className="page-panel">
-            <span className="section-kicker">Feed sync status</span>
-            <strong>Data sources and their latest sync results</strong>
-            <div className="status-table-wrap">
-              <table className="status-table">
-                <thead>
-                  <tr>
-                    <th>Feed</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Last sync</th>
-                    <th>Fetched</th>
-                    <th>Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {status.feeds.map((feed) => (
-                    <tr key={feed.name}>
-                      <td>
+          <>
+            <section className="page-panel">
+              <span className="section-kicker">Source health</span>
+              <strong>Published data sources in the current snapshot</strong>
+              <div className="page-badges">
+                <span className="page-badge">{status.feeds.length} active feeds</span>
+                <span className="page-badge">{currentFeedCount} available in snapshot</span>
+                <span className="page-badge">{totalFetched.toLocaleString()} records fetched</span>
+              </div>
+            </section>
+
+            <section className="page-panel">
+              <span className="section-kicker">Feed status</span>
+              <strong>Coverage and freshness for each published source</strong>
+              <div className="status-feed-grid">
+                {status.feeds.map((feed) => {
+                  const displayStatus = getFeedStatus(feed)
+
+                  return (
+                    <article className="status-feed-card" key={feed.name}>
+                      <div className="status-feed-card__header">
                         <strong>{feed.name}</strong>
-                        {!feed.isEnabled && <span className="status-badge status-badge--disabled"> disabled</span>}
-                      </td>
-                      <td>{feed.type}</td>
-                      <td>
-                        <span className={`status-badge ${syncStatusClass(feed.lastSyncStatus)}`}>
-                          {feed.lastSyncStatus ?? 'Unknown'}
+                        <span className={`status-badge ${displayStatus.className}`}>
+                          {displayStatus.label}
                         </span>
-                      </td>
-                      <td title={formatDateTime(feed.lastSyncCompletedAt)}>
-                        {formatRelative(feed.lastSyncCompletedAt)}
-                      </td>
-                      <td>{feed.lastRecordsFetched ?? '-'}</td>
-                      <td>{feed.lastRecordsCreated ?? '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                      </div>
+                      <span className="status-feed-card__type">{formatFeedType(feed.type)}</span>
+                      <p>{displayStatus.detail}</p>
+                      <p className="status-feed-card__updated">
+                        Last updated: {formatDateTime(feed.lastSyncCompletedAt)}
+                      </p>
+                      <div className="status-feed-card__metrics">
+                        <span className="page-badge">
+                          {(feed.lastRecordsFetched ?? 0).toLocaleString()} fetched
+                        </span>
+                        {feed.lastSyncCompletedAt ? (
+                          <span className="page-badge" title={formatDateTime(feed.lastSyncCompletedAt)}>
+                            {formatRelative(feed.lastSyncCompletedAt)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          </>
         ) : null}
 
         <section className="page-panel">

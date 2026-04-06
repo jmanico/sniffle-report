@@ -101,6 +101,44 @@ vi.mock('../hooks/useStaticData', () => ({
         hospital: 205,
         total: 638,
       },
+      accessSignals: [
+        {
+          designationId: '0a4da3dd-f7cd-4778-b456-c215c5ff2d8a',
+          areaName: 'Philadelphia County mental health service area',
+          discipline: 'Mental Health',
+          designationType: 'Geographic area',
+          status: 'Designated',
+          populationGroup: null,
+          hpsaScore: 17,
+          populationToProviderRatio: 4280.4,
+          sourceUpdatedAt: '2026-03-29T00:00:00Z',
+        },
+        {
+          designationId: 'f7673426-ea21-40b2-9f78-f7d01c232916',
+          areaName: 'Rural northwest Pennsylvania primary care service area',
+          discipline: 'Primary Care',
+          designationType: 'Geographic area',
+          status: 'Designated',
+          populationGroup: null,
+          hpsaScore: 12,
+          populationToProviderRatio: 3010.2,
+          sourceUpdatedAt: '2026-03-25T00:00:00Z',
+        },
+      ],
+      environmentalSignals: [
+        {
+          violationId: 'b563a47d-d33d-4c12-9126-25df5f467d96',
+          waterSystemName: 'Philadelphia River Supply',
+          violationCategory: 'Maximum contaminant level',
+          ruleName: 'Total Trihalomethanes Rule',
+          contaminantName: 'Total trihalomethanes',
+          summary: 'Open maximum contaminant level violation for total trihalomethanes in a public water system serving Philadelphia County.',
+          isOpen: true,
+          populationServed: 346000,
+          identifiedAt: '2026-01-23T00:00:00Z',
+          sourceUpdatedAt: '2026-03-28T00:00:00Z',
+        },
+      ],
       nearbyResources: [],
       preventionHighlights: [],
       newsHighlights: [],
@@ -132,6 +170,12 @@ describe('StateBrowsePage', () => {
     expect(screen.getByText(/hepatitis c, chronic, probable/i)).toBeInTheDocument()
     expect(screen.getByText(/hepatitis c, perinatal, confirmed/i)).toBeInTheDocument()
     expect(screen.getByText(/influenza-associated pediatric mortality/i)).toBeInTheDocument()
+    expect(screen.getByText(/provider shortages and drinking water issues across the state/i)).toBeInTheDocument()
+    expect(screen.getByText(/mental health access constraints/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/1 shortage area/i)).toHaveLength(2)
+    expect(screen.getByText(/top hpsa score 17/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/maximum contaminant level/i)).toHaveLength(2)
+    expect(screen.getByText(/346,000 served/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /chester county/i })).toHaveAttribute('href', '/region/4156a173-433d-4823-b48a-deb80c0842fa')
   })
 })

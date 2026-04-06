@@ -43,4 +43,50 @@ public sealed class NormalizedFeedRecord
     public double? Longitude { get; init; }
 
     public ResourceType? ResourceType { get; init; }
+
+    // Fields for ShortageAreaDesignation records
+    public string? AreaName { get; init; }
+
+    public string? Discipline { get; init; }
+
+    public string? DesignationType { get; init; }
+
+    public string? DesignationStatus { get; init; }
+
+    public string? PopulationGroup { get; init; }
+
+    public int? HpsaScore { get; init; }
+
+    public decimal? PopulationToProviderRatio { get; init; }
+
+    // Fields for DrinkingWaterViolation records
+    public string? ParentExternalSourceId { get; init; }
+
+    public string? WaterSystemName { get; init; }
+
+    public string? WaterSystemType { get; init; }
+
+    public string? WaterSystemAddress { get; init; }
+
+    public string? WaterSystemCity { get; init; }
+
+    public string? WaterSystemState { get; init; }
+
+    public string? WaterSystemPostalCode { get; init; }
+
+    public string? CountyServed { get; init; }
+
+    public int? PopulationServed { get; init; }
+
+    public string? ViolationCategory { get; init; }
+
+    public string? RuleName { get; init; }
+
+    public string? ContaminantName { get; init; }
+
+    public bool? IsOpenViolation { get; init; }
+
+    public DateTime? IdentifiedAt { get; init; }
+
+    public DateTime? ResolvedAt { get; init; }
 }

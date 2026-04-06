@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using SniffleReport.Api.Models.Entities;
 using SniffleReport.Api.Models.Enums;
@@ -23,27 +24,41 @@ public sealed class HrsaConnector(
             var response = await client.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            var json = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-
+            var payload = await response.Content.ReadAsStringAsync(ct);
             var records = new List<NormalizedFeedRecord>();
 
-            if (doc.RootElement.TryGetProperty("results", out var results))
+            if (LooksLikeCsv(payload))
             {
-                foreach (var center in results.EnumerateArray())
+                foreach (var row in CsvRecordReader.Parse(payload))
                 {
-                    var record = ParseCenter(center, source);
+                    var record = ParseCenter(row, source);
                     if (record is not null)
+                    {
                         records.Add(record);
+                    }
                 }
             }
-            else if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            else
             {
-                foreach (var center in doc.RootElement.EnumerateArray())
+                using var doc = JsonDocument.Parse(payload);
+
+                if (doc.RootElement.TryGetProperty("results", out var results))
                 {
-                    var record = ParseCenter(center, source);
-                    if (record is not null)
-                        records.Add(record);
+                    foreach (var center in results.EnumerateArray())
+                    {
+                        var record = ParseCenter(center, source);
+                        if (record is not null)
+                            records.Add(record);
+                    }
+                }
+                else if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var center in doc.RootElement.EnumerateArray())
+                    {
+                        var record = ParseCenter(center, source);
+                        if (record is not null)
+                            records.Add(record);
+                    }
                 }
             }
 
@@ -61,6 +76,12 @@ public sealed class HrsaConnector(
             logger.LogError(ex, "Error fetching HRSA data for {FeedName}", source.Name);
             return FeedFetchResult.Failure(ex.Message);
         }
+    }
+
+    private static bool LooksLikeCsv(string payload)
+    {
+        var trimmed = payload.TrimStart();
+        return !trimmed.StartsWith("{", StringComparison.Ordinal) && !trimmed.StartsWith("[", StringComparison.Ordinal);
     }
 
     private static NormalizedFeedRecord? ParseCenter(JsonElement center, FeedSource source)
@@ -101,6 +122,48 @@ public sealed class HrsaConnector(
         };
     }
 
+    private static NormalizedFeedRecord? ParseCenter(
+        IReadOnlyDictionary<string, string> row,
+        FeedSource source)
+    {
+        var name = CsvRecordReader.GetValue(row, "health_center_site_name", "site_name", "name");
+        var state = CsvRecordReader.GetValue(row, "site_state_abbreviation", "state");
+
+        if (name is null || state is null)
+        {
+            return null;
+        }
+
+        var address = CsvRecordReader.GetValue(row, "site_address", "street_address", "address");
+        var city = CsvRecordReader.GetValue(row, "site_city", "city");
+        var zip = CsvRecordReader.GetValue(row, "site_postal_code", "zip", "postal_code");
+        var phone = CsvRecordReader.GetValue(row, "main_phone_number", "phone", "telephone");
+        var website = CsvRecordReader.GetValue(row, "website_url", "website", "url");
+        var id = CsvRecordReader.GetValue(row, "site_id", "id") ?? name;
+        var latitude = ParseNullableDouble(CsvRecordReader.GetValue(row, "latitude", "site_latitude"));
+        var longitude = ParseNullableDouble(CsvRecordReader.GetValue(row, "longitude", "site_longitude"));
+
+        var fullAddress = string.Join(", ",
+            new[] { address, city, $"{state} {zip}" }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+        return new NormalizedFeedRecord
+        {
+            ExternalSourceId = $"hrsa:{state}:{id}",
+            RawPayloadJson = JsonSerializer.Serialize(row),
+            RecordType = NormalizedRecordType.LocalResourceEntry,
+            JurisdictionName = state,
+            ResourceName = name.Length > 200 ? name[..200] : name,
+            Address = fullAddress.Length > 300 ? fullAddress[..300] : fullAddress,
+            Phone = phone?.Length > 40 ? phone[..40] : phone,
+            Website = website?.Length > 500 ? website[..500] : website,
+            Latitude = latitude,
+            Longitude = longitude,
+            ResourceType = ResourceType.Clinic,
+            SourceAttribution = "HRSA Health Center Service Delivery Sites"
+        };
+    }
+
+
     private static string? GetField(JsonElement element, string name)
     {
         if (element.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String)
@@ -121,5 +184,17 @@ public sealed class HrsaConnector(
                 return d2;
         }
         return null;
+    }
+
+    private static double? ParseNullableDouble(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
     }
 }

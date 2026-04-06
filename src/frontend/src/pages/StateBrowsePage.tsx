@@ -37,6 +37,24 @@ type StatewidePattern = {
   diseases: string[]
 }
 
+type StatewideAccessPattern = {
+  key: string
+  discipline: string
+  designationCount: number
+  highestScore: number | null
+  latestDate: string | null
+  areas: string[]
+}
+
+type StatewideWaterPattern = {
+  key: string
+  violationCategory: string
+  violationCount: number
+  populationServed: number
+  latestDate: string | null
+  systems: string[]
+}
+
 function groupStatewideAlerts(topAlerts: RegionDashboard['topAlerts']) {
   const patterns = new Map<string, StatewidePattern>()
 
@@ -96,6 +114,89 @@ function buildPatternExamplesRemainder(pattern: StatewidePattern) {
   return pattern.diseaseCount - buildPatternExamples(pattern).length
 }
 
+function groupStatewideAccessSignals(accessSignals: RegionDashboard['accessSignals']) {
+  const patterns = new Map<string, StatewideAccessPattern>()
+
+  accessSignals.forEach((signal) => {
+    const key = signal.discipline.trim().toLowerCase()
+    const existing = patterns.get(key)
+
+    if (!existing) {
+      patterns.set(key, {
+        key,
+        discipline: signal.discipline,
+        designationCount: 1,
+        highestScore: signal.hpsaScore,
+        latestDate: signal.sourceUpdatedAt,
+        areas: [signal.areaName],
+      })
+      return
+    }
+
+    existing.designationCount += 1
+    existing.highestScore = existing.highestScore == null
+      ? signal.hpsaScore
+      : signal.hpsaScore == null
+        ? existing.highestScore
+        : Math.max(existing.highestScore, signal.hpsaScore)
+
+    if (signal.sourceUpdatedAt && (!existing.latestDate || new Date(signal.sourceUpdatedAt).getTime() > new Date(existing.latestDate).getTime())) {
+      existing.latestDate = signal.sourceUpdatedAt
+    }
+
+    if (!existing.areas.includes(signal.areaName)) {
+      existing.areas.push(signal.areaName)
+    }
+  })
+
+  return [...patterns.values()]
+    .sort((left, right) => {
+      if (right.designationCount !== left.designationCount) return right.designationCount - left.designationCount
+      return (right.highestScore ?? 0) - (left.highestScore ?? 0)
+    })
+    .slice(0, 3)
+}
+
+function groupStatewideWaterSignals(environmentalSignals: RegionDashboard['environmentalSignals']) {
+  const patterns = new Map<string, StatewideWaterPattern>()
+
+  environmentalSignals.forEach((signal) => {
+    const key = signal.violationCategory.trim().toLowerCase()
+    const existing = patterns.get(key)
+
+    if (!existing) {
+      patterns.set(key, {
+        key,
+        violationCategory: signal.violationCategory,
+        violationCount: 1,
+        populationServed: signal.populationServed ?? 0,
+        latestDate: signal.sourceUpdatedAt ?? signal.identifiedAt,
+        systems: [signal.waterSystemName],
+      })
+      return
+    }
+
+    existing.violationCount += 1
+    existing.populationServed += signal.populationServed ?? 0
+
+    const signalDate = signal.sourceUpdatedAt ?? signal.identifiedAt
+    if (signalDate && (!existing.latestDate || new Date(signalDate).getTime() > new Date(existing.latestDate).getTime())) {
+      existing.latestDate = signalDate
+    }
+
+    if (!existing.systems.includes(signal.waterSystemName)) {
+      existing.systems.push(signal.waterSystemName)
+    }
+  })
+
+  return [...patterns.values()]
+    .sort((left, right) => {
+      if (right.populationServed !== left.populationServed) return right.populationServed - left.populationServed
+      return right.violationCount - left.violationCount
+    })
+    .slice(0, 3)
+}
+
 export function StateBrowsePage() {
   const { stateCode } = useParams<{ stateCode: string }>()
   const stateQuery = useStateDetail(stateCode ?? '')
@@ -122,6 +223,16 @@ export function StateBrowsePage() {
   const statewidePatterns = useMemo(() => {
     if (!stateDashboardQuery.data) return []
     return groupStatewideAlerts(stateDashboardQuery.data.topAlerts)
+  }, [stateDashboardQuery.data])
+
+  const statewideAccessPatterns = useMemo(() => {
+    if (!stateDashboardQuery.data) return []
+    return groupStatewideAccessSignals(stateDashboardQuery.data.accessSignals)
+  }, [stateDashboardQuery.data])
+
+  const statewideWaterPatterns = useMemo(() => {
+    if (!stateDashboardQuery.data) return []
+    return groupStatewideWaterSignals(stateDashboardQuery.data.environmentalSignals)
   }, [stateDashboardQuery.data])
 
   function toggleSort(key: SortKey) {
@@ -234,6 +345,84 @@ export function StateBrowsePage() {
                   </div>
                   <span className="statewide-pattern-card__meta">
                     Updated {formatDate(pattern.latestDate)}
+                  </span>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {statewideAccessPatterns.length || statewideWaterPatterns.length ? (
+          <section className="page-panel">
+            <div className="dashboard-card__header">
+              <div>
+                <span className="section-kicker">Statewide access and safety</span>
+                <strong>Provider shortages and drinking water issues across the state</strong>
+              </div>
+            </div>
+            <div className="statewide-pattern-list">
+              {statewideAccessPatterns.map((pattern) => (
+                <article className="statewide-pattern-card" key={pattern.key}>
+                  <div className="statewide-pattern-card__header">
+                    <span className="page-badge">{pattern.discipline}</span>
+                    <span className="state-alert-pill">
+                      {pattern.designationCount} shortage area{pattern.designationCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <strong>{pattern.discipline} access constraints</strong>
+                  <div className="statewide-pattern-card__stats">
+                    {pattern.highestScore != null ? (
+                      <span className="page-badge">Top HPSA score {pattern.highestScore}</span>
+                    ) : null}
+                    <span className="page-badge">{pattern.areas.length} areas</span>
+                  </div>
+                  <p>
+                    HRSA currently designates {pattern.designationCount} {pattern.discipline.toLowerCase()} shortage area{pattern.designationCount === 1 ? '' : 's'} in this statewide snapshot.
+                  </p>
+                  <div className="statewide-pattern-card__examples">
+                    {pattern.areas.slice(0, 3).map((area) => (
+                      <span className="statewide-pattern-card__example" key={area}>{area}</span>
+                    ))}
+                    {pattern.areas.length > 3 ? (
+                      <span className="statewide-pattern-card__example statewide-pattern-card__example--more">
+                        +{pattern.areas.length - 3} more
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="statewide-pattern-card__meta">
+                    HRSA HPSA{pattern.latestDate ? ` · Updated ${formatDate(pattern.latestDate)}` : ''}
+                  </span>
+                </article>
+              ))}
+
+              {statewideWaterPatterns.map((pattern) => (
+                <article className="statewide-pattern-card" key={pattern.key}>
+                  <div className="statewide-pattern-card__header">
+                    <span className="page-badge">Water safety</span>
+                    <span className="state-alert-pill">
+                      {pattern.violationCount} open issue{pattern.violationCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <strong>{pattern.violationCategory}</strong>
+                  <div className="statewide-pattern-card__stats">
+                    <span className="page-badge">{pattern.populationServed.toLocaleString()} served</span>
+                    <span className="page-badge">{pattern.systems.length} systems</span>
+                  </div>
+                  <p>
+                    EPA SDWIS shows {pattern.violationCount} open {pattern.violationCategory.toLowerCase()} issue{pattern.violationCount === 1 ? '' : 's'} in the current statewide snapshot.
+                  </p>
+                  <div className="statewide-pattern-card__examples">
+                    {pattern.systems.slice(0, 3).map((system) => (
+                      <span className="statewide-pattern-card__example" key={system}>{system}</span>
+                    ))}
+                    {pattern.systems.length > 3 ? (
+                      <span className="statewide-pattern-card__example statewide-pattern-card__example--more">
+                        +{pattern.systems.length - 3} more
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="statewide-pattern-card__meta">
+                    EPA SDWIS{pattern.latestDate ? ` · Updated ${formatDate(pattern.latestDate)}` : ''}
                   </span>
                 </article>
               ))}

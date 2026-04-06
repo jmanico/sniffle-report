@@ -410,6 +410,31 @@ export const snapshotResourceCountsSchema = z.object({
   total: z.number().int().nonnegative(),
 })
 
+export const snapshotAccessSignalSummarySchema = z.object({
+  designationId: guidSchema,
+  areaName: z.string().min(1),
+  discipline: z.string().min(1),
+  designationType: z.string().min(1),
+  status: z.string().min(1),
+  populationGroup: z.string().nullable(),
+  hpsaScore: z.number().int().nullable(),
+  populationToProviderRatio: z.number().nullable(),
+  sourceUpdatedAt: isoDateTimeSchema.nullable(),
+})
+
+export const snapshotEnvironmentalSignalSummarySchema = z.object({
+  violationId: guidSchema,
+  waterSystemName: z.string().min(1),
+  violationCategory: z.string().min(1),
+  ruleName: z.string().min(1),
+  contaminantName: z.string().nullable(),
+  summary: z.string().min(1),
+  isOpen: z.boolean(),
+  populationServed: z.number().int().nullable(),
+  identifiedAt: isoDateTimeSchema.nullable(),
+  sourceUpdatedAt: isoDateTimeSchema.nullable(),
+})
+
 export const snapshotPreventionSummarySchema = z.object({
   guideId: guidSchema,
   disease: z.string().min(1),
@@ -431,6 +456,8 @@ export const regionDashboardSchema = z.object({
   topAlerts: z.array(snapshotAlertSummarySchema),
   trendHighlights: z.array(snapshotTrendHighlightSchema),
   resourceCounts: snapshotResourceCountsSchema,
+  accessSignals: z.array(snapshotAccessSignalSummarySchema),
+  environmentalSignals: z.array(snapshotEnvironmentalSignalSummarySchema),
   preventionHighlights: z.array(snapshotPreventionSummarySchema),
   newsHighlights: z.array(snapshotNewsSummarySchema),
 })
@@ -438,6 +465,8 @@ export const regionDashboardSchema = z.object({
 export type SnapshotAlertSummary = z.infer<typeof snapshotAlertSummarySchema>
 export type SnapshotTrendHighlight = z.infer<typeof snapshotTrendHighlightSchema>
 export type SnapshotResourceCounts = z.infer<typeof snapshotResourceCountsSchema>
+export type SnapshotAccessSignalSummary = z.infer<typeof snapshotAccessSignalSummarySchema>
+export type SnapshotEnvironmentalSignalSummary = z.infer<typeof snapshotEnvironmentalSignalSummarySchema>
 export type SnapshotPreventionSummary = z.infer<typeof snapshotPreventionSummarySchema>
 export type SnapshotNewsSummary = z.infer<typeof snapshotNewsSummarySchema>
 export type RegionDashboard = z.infer<typeof regionDashboardSchema>

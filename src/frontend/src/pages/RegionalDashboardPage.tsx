@@ -21,6 +21,10 @@ function formatDate(date: string) {
   }).format(new Date(date))
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('en-US').format(value)
+}
+
 function formatDateRange(startDate: string, endDate: string) {
   const start = new Date(startDate)
   const end = new Date(endDate)
@@ -85,6 +89,22 @@ type DisplayAlert = DashboardAlert & {
   latestSourceDate: string
   earliestSourceDate: string
   occurrenceCount: number
+}
+
+function isCommunityHealthAlert(alert: { disease: string }) {
+  return alert.disease.startsWith('[Community Health]')
+}
+
+function getDisplayDiseaseName(disease: string) {
+  return disease.replace(/^\[Community Health\]\s*/, '').trim()
+}
+
+function buildAlertMetricLabel(alert: { caseCount: number; disease: string }) {
+  if (isCommunityHealthAlert(alert)) {
+    return `${alert.caseCount}% indicator`
+  }
+
+  return `${alert.caseCount} cases`
 }
 
 function createAlertGroupKey(alert: DashboardAlert) {
@@ -161,6 +181,37 @@ function buildDisplayAlertMeta(alert: DisplayAlert) {
   return `${sourceLabel} · ${dateLabel}`
 }
 
+function buildAlertHeading(alert: DisplayAlert) {
+  if (!isCommunityHealthAlert(alert)) {
+    return alert.title
+  }
+
+  return getDisplayDiseaseName(alert.disease)
+}
+
+function buildAlertTypeLabel(alert: DisplayAlert) {
+  if (!isCommunityHealthAlert(alert)) {
+    return null
+  }
+
+  return 'Community health indicator'
+}
+
+function buildCommunityHealthSummary(alert: DisplayAlert) {
+  return alert.summary
+}
+
+function buildCommunityHealthMetricLabel(alert: DisplayAlert) {
+  const percentageMatch = alert.title.match(/:\s*([0-9.]+)%/)
+  const displayValue = percentageMatch ? `${percentageMatch[1]}%` : `${alert.caseCount}%`
+
+  if (/prevalence/i.test(alert.summary)) {
+    return `${displayValue} prevalence`
+  }
+
+  return `${displayValue} rate`
+}
+
 export function RegionalDashboardPage() {
   const { regionId } = useParams<{ regionId: string }>()
   const dashboardQuery = useStaticDashboard(regionId ?? '')
@@ -191,6 +242,8 @@ export function RegionalDashboardPage() {
 
   const resourceCounts = dashboard?.resourceCounts
   const nearbyResources = dashboard?.nearbyResources ?? []
+  const accessSignals = dashboard?.accessSignals ?? []
+  const environmentalSignals = dashboard?.environmentalSignals ?? []
   const resourceParts = resourceCounts
     ? [
         resourceCounts.clinic > 0 ? `${resourceCounts.clinic} clinics` : null,
@@ -261,13 +314,20 @@ export function RegionalDashboardPage() {
                   <article className="dashboard-alert-card" key={alert.alertId}>
                     <div className="dashboard-alert-card__row">
                       <SeverityBadge severity={alert.severity as 'Low' | 'Moderate' | 'High' | 'Critical'} />
-                      <span className="dashboard-alert-card__cases">{alert.caseCount} cases</span>
+                      <span className="dashboard-alert-card__cases">
+                        {isCommunityHealthAlert(alert) ? buildCommunityHealthMetricLabel(alert) : buildAlertMetricLabel(alert)}
+                      </span>
                       {buildAlertOccurrencesLabel(alert) ? (
                         <span className="dashboard-alert-card__updates">{buildAlertOccurrencesLabel(alert)}</span>
                       ) : null}
                     </div>
-                    <strong>{alert.title}</strong>
-                    <p className="dashboard-alert-card__summary">{buildAlertSummary(alert)}</p>
+                    <strong>{buildAlertHeading(alert)}</strong>
+                    {buildAlertTypeLabel(alert) ? (
+                      <span className="dashboard-alert-card__indicator">{buildAlertTypeLabel(alert)}</span>
+                    ) : null}
+                    <p className="dashboard-alert-card__summary">
+                      {isCommunityHealthAlert(alert) ? buildCommunityHealthSummary(alert) : buildAlertSummary(alert)}
+                    </p>
                     {alert.previousCaseCount != null && alert.wowChangePercent != null ? (
                       <span className="dashboard-alert-card__trend">
                         {alert.previousCaseCount} previous cases · {formatAlertWowChange(alert.wowChangePercent)} WoW
@@ -313,6 +373,64 @@ export function RegionalDashboardPage() {
               </div>
             ) : (
               <p className="dashboard-empty">Trend data is not available for this region yet.</p>
+            )}
+          </section>
+
+          <section className="page-panel dashboard-card">
+            <div className="dashboard-card__header">
+              <div>
+                <span className="section-kicker">Access & safety</span>
+                <strong>Provider shortages and drinking water issues</strong>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="dashboard-skeleton-group" aria-hidden="true">
+                <div className="dashboard-skeleton dashboard-skeleton--line" />
+                <div className="dashboard-skeleton dashboard-skeleton--card" />
+              </div>
+            ) : accessSignals.length || environmentalSignals.length ? (
+              <div className="dashboard-signal-list">
+                {accessSignals.map((signal) => (
+                  <article className="dashboard-signal-card" key={signal.designationId}>
+                    <div className="dashboard-alert-card__row">
+                      <span className="page-badge">{signal.discipline}</span>
+                      {signal.hpsaScore != null ? (
+                        <span className="dashboard-alert-card__cases">HPSA score {signal.hpsaScore}</span>
+                      ) : null}
+                    </div>
+                    <strong>{signal.areaName}</strong>
+                    <span className="dashboard-alert-card__indicator">{signal.designationType}</span>
+                    <p className="dashboard-alert-card__summary">
+                      {signal.populationToProviderRatio != null
+                        ? `${signal.status}. Estimated population-to-provider ratio: ${signal.populationToProviderRatio.toLocaleString('en-US', { maximumFractionDigits: 1 })}.`
+                        : `${signal.status}. HRSA shortage-area designation for this region.`}
+                    </p>
+                    <span className="dashboard-alert-card__meta">
+                      HRSA HPSA{signal.sourceUpdatedAt ? ` · ${formatDate(signal.sourceUpdatedAt)}` : ''}
+                    </span>
+                  </article>
+                ))}
+                {environmentalSignals.map((signal) => (
+                  <article className="dashboard-signal-card" key={signal.violationId}>
+                    <div className="dashboard-alert-card__row">
+                      <span className="page-badge">Water safety</span>
+                      {signal.populationServed != null ? (
+                        <span className="dashboard-alert-card__cases">{formatNumber(signal.populationServed)} served</span>
+                      ) : null}
+                    </div>
+                    <strong>{signal.waterSystemName}</strong>
+                    <span className="dashboard-alert-card__indicator">{signal.violationCategory}</span>
+                    <p className="dashboard-alert-card__summary">{signal.summary}</p>
+                    <span className="dashboard-alert-card__meta">
+                      {signal.ruleName}
+                      {signal.identifiedAt ? ` · Open since ${formatDate(signal.identifiedAt)}` : ''}
+                    </span>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="dashboard-empty">No provider-shortage or drinking-water safety signals for this region yet.</p>
             )}
           </section>
 
