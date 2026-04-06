@@ -405,6 +405,21 @@
   gap: 0.625rem;
 }
 
+.dashboard-signal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.dashboard-signal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  background: color-mix(in srgb, var(--paper-deep) 82%, #d7efe3 18%);
+  border-radius: var(--radius-md);
+}
+
 .dashboard-alert-card {
   display: flex;
   flex-direction: column;
@@ -451,6 +466,14 @@
   font-size: 0.8125rem;
   line-height: 1.45;
   color: var(--ink-soft);
+}
+
+.dashboard-alert-card__indicator {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .dashboard-alert-card__trend {
@@ -864,6 +887,54 @@
 .status-sync--partial { background: var(--warning-bg); color: var(--warning); }
 .status-sync--failed { background: var(--danger-bg); color: var(--danger); }
 .status-sync--never { background: var(--paper-deep); color: var(--ink-faint); }
+
+.status-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.9rem;
+}
+
+.status-feed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--paper-deep);
+}
+
+.status-feed-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.status-feed-card__type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.status-feed-card p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.status-feed-card__updated {
+  font-size: 0.8125rem;
+  color: var(--ink-faint);
+}
+
+.status-feed-card__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
 
 /* ── Error State ──────────────────────────────────── */
 

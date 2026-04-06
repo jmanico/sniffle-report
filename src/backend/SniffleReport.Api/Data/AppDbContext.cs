@@ -34,6 +34,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<RegionSnapshot> RegionSnapshots => Set<RegionSnapshot>();
 
+    public DbSet<ShortageAreaDesignation> ShortageAreaDesignations => Set<ShortageAreaDesignation>();
+
+    public DbSet<WaterSystem> WaterSystems => Set<WaterSystem>();
+
+    public DbSet<WaterSystemViolation> WaterSystemViolations => Set<WaterSystemViolation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -52,6 +58,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         ConfigureFeedSyncLog(modelBuilder);
         ConfigureIngestedRecord(modelBuilder);
         ConfigureRegionSnapshot(modelBuilder);
+        ConfigureShortageAreaDesignation(modelBuilder);
+        ConfigureWaterSystem(modelBuilder);
+        ConfigureWaterSystemViolation(modelBuilder);
     }
 
     private static void ConfigureRegion(ModelBuilder modelBuilder)
@@ -234,6 +243,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         entity.Property(x => x.TopAlertsJson).HasColumnType("jsonb");
         entity.Property(x => x.TrendHighlightsJson).HasColumnType("jsonb");
         entity.Property(x => x.ResourceCountsJson).HasColumnType("jsonb");
+        entity.Property(x => x.AccessSignalsJson).HasColumnType("jsonb");
+        entity.Property(x => x.EnvironmentalSignalsJson).HasColumnType("jsonb");
         entity.Property(x => x.PreventionHighlightsJson).HasColumnType("jsonb");
         entity.Property(x => x.NewsHighlightsJson).HasColumnType("jsonb");
         entity.HasIndex(x => x.RegionId)
@@ -244,6 +255,72 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         entity.HasOne(x => x.Region)
             .WithOne()
             .HasForeignKey<RegionSnapshot>(x => x.RegionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureShortageAreaDesignation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ShortageAreaDesignation>();
+
+        entity.ToTable("ShortageAreaDesignations");
+        entity.Property(x => x.ExternalSourceId).HasMaxLength(128);
+        entity.Property(x => x.AreaName).HasMaxLength(300);
+        entity.Property(x => x.Discipline).HasMaxLength(120);
+        entity.Property(x => x.DesignationType).HasMaxLength(120);
+        entity.Property(x => x.Status).HasMaxLength(120);
+        entity.Property(x => x.PopulationGroup).HasMaxLength(200);
+        entity.Property(x => x.PopulationToProviderRatio).HasPrecision(12, 2);
+        entity.HasIndex(x => x.ExternalSourceId)
+            .IsUnique()
+            .HasDatabaseName("IX_ShortageAreaDesignation_ExternalSourceId");
+        entity.HasIndex(x => new { x.RegionId, x.Discipline })
+            .HasDatabaseName("IX_ShortageAreaDesignation_RegionId_Discipline");
+        entity.HasOne(x => x.Region)
+            .WithMany()
+            .HasForeignKey(x => x.RegionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureWaterSystem(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<WaterSystem>();
+
+        entity.ToTable("WaterSystems");
+        entity.Property(x => x.ExternalSourceId).HasMaxLength(64);
+        entity.Property(x => x.Name).HasMaxLength(300);
+        entity.Property(x => x.SystemType).HasMaxLength(120);
+        entity.Property(x => x.Address).HasMaxLength(300);
+        entity.Property(x => x.City).HasMaxLength(120);
+        entity.Property(x => x.State).HasMaxLength(32);
+        entity.Property(x => x.PostalCode).HasMaxLength(20);
+        entity.Property(x => x.CountyServed).HasMaxLength(120);
+        entity.HasIndex(x => x.ExternalSourceId)
+            .IsUnique()
+            .HasDatabaseName("IX_WaterSystem_ExternalSourceId");
+    }
+
+    private static void ConfigureWaterSystemViolation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<WaterSystemViolation>();
+
+        entity.ToTable("WaterSystemViolations");
+        entity.Property(x => x.ExternalSourceId).HasMaxLength(128);
+        entity.Property(x => x.ViolationCategory).HasMaxLength(200);
+        entity.Property(x => x.RuleName).HasMaxLength(300);
+        entity.Property(x => x.ContaminantName).HasMaxLength(200);
+        entity.Property(x => x.Summary).HasMaxLength(2_000);
+        entity.HasIndex(x => x.ExternalSourceId)
+            .IsUnique()
+            .HasDatabaseName("IX_WaterSystemViolation_ExternalSourceId");
+        entity.HasIndex(x => new { x.RegionId, x.IsOpen })
+            .HasDatabaseName("IX_WaterSystemViolation_RegionId_IsOpen");
+        entity.HasOne(x => x.Region)
+            .WithMany()
+            .HasForeignKey(x => x.RegionId)
+            .OnDelete(DeleteBehavior.Cascade);
+        entity.HasOne(x => x.WaterSystem)
+            .WithMany(x => x.Violations)
+            .HasForeignKey(x => x.WaterSystemId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

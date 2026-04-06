@@ -26,6 +26,8 @@ public static class DevelopmentDataSeeder
         await SeedDiseaseTrendsAsync(context, cancellationToken);
         await SeedPreventionGuidesAsync(context, cancellationToken);
         await SeedLocalResourcesAsync(context, cancellationToken);
+        await SeedShortageAreaDesignationsAsync(context, cancellationToken);
+        await SeedWaterSystemsAsync(context, cancellationToken);
         await SeedFeedSourcesAsync(context, cancellationToken);
 
         // Build initial region snapshots so the dashboard is ready immediately
@@ -261,6 +263,70 @@ public static class DevelopmentDataSeeder
         logger.LogInformation("Initial region snapshots built successfully.");
     }
 
+    private static async Task SeedShortageAreaDesignationsAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        var regions = await GetRegionLookupAsync(context, cancellationToken);
+
+        foreach (var seed in GetShortageAreaSeeds(regions))
+        {
+            var existing = await context.ShortageAreaDesignations
+                .SingleOrDefaultAsync(d => d.ExternalSourceId == seed.ExternalSourceId, cancellationToken);
+
+            if (existing is null)
+            {
+                context.ShortageAreaDesignations.Add(seed);
+                continue;
+            }
+
+            seed.Id = existing.Id;
+            context.Entry(existing).CurrentValues.SetValues(seed);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task SeedWaterSystemsAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        var regions = await GetRegionLookupAsync(context, cancellationToken);
+
+        foreach (var seed in GetWaterSystemSeeds())
+        {
+            var existing = await context.WaterSystems
+                .SingleOrDefaultAsync(s => s.ExternalSourceId == seed.ExternalSourceId, cancellationToken);
+
+            if (existing is null)
+            {
+                context.WaterSystems.Add(seed);
+                continue;
+            }
+
+            seed.Id = existing.Id;
+            context.Entry(existing).CurrentValues.SetValues(seed);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        var systems = await context.WaterSystems
+            .ToDictionaryAsync(s => s.ExternalSourceId, cancellationToken);
+
+        foreach (var seed in GetWaterViolationSeeds(regions, systems))
+        {
+            var existing = await context.WaterSystemViolations
+                .SingleOrDefaultAsync(v => v.ExternalSourceId == seed.ExternalSourceId, cancellationToken);
+
+            if (existing is null)
+            {
+                context.WaterSystemViolations.Add(seed);
+                continue;
+            }
+
+            seed.Id = existing.Id;
+            context.Entry(existing).CurrentValues.SetValues(seed);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     private static async Task<Dictionary<string, Region>> GetRegionLookupAsync(AppDbContext context, CancellationToken cancellationToken)
     {
         var regions = await context.Regions.ToListAsync(cancellationToken);
@@ -449,6 +515,33 @@ public static class DevelopmentDataSeeder
             },
             new FeedSource
             {
+                Name = "HRSA Health Center Service Delivery Sites",
+                Type = FeedSourceType.HrsaHealthCenter,
+                Url = "https://data.hrsa.gov/DataDownload/Files/HealthCenterProgram/Health_Center_Service_Delivery_and_Look_Alike_Sites.csv",
+                PollingInterval = TimeSpan.FromDays(1),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "HRSA Health Professional Shortage Areas",
+                Type = FeedSourceType.HrsaHpsa,
+                Url = "https://data.hrsa.gov/DataDownload/Files/ShortageAreas/BCD_HPSA_FCT_DET_PC.csv",
+                PollingInterval = TimeSpan.FromDays(1),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
+                Name = "EPA Safe Drinking Water Violations",
+                Type = FeedSourceType.EpaSdwis,
+                Url = "https://data.epa.gov/efservice/SDW_VIOL_ENFORCEMENT/ROWS/0:5000/JSON",
+                PollingInterval = TimeSpan.FromDays(7),
+                IsEnabled = true,
+                LastSyncStatus = FeedSyncStatus.NeverRun
+            },
+            new FeedSource
+            {
                 Name = "openFDA Drug Enforcement",
                 Type = FeedSourceType.OpenFda,
                 Url = "drug/enforcement.json?limit=100&sort=report_date:desc",
@@ -495,6 +588,115 @@ public static class DevelopmentDataSeeder
             CreateTrend(alerts["Pertussis spike under active community monitoring"], new DateTime(2026, 2, 12, 0, 0, 0, DateTimeKind.Utc), 11),
             CreateTrend(alerts["Pertussis spike under active community monitoring"], new DateTime(2026, 2, 26, 0, 0, 0, DateTimeKind.Utc), 21),
             CreateTrend(alerts["Pertussis spike under active community monitoring"], new DateTime(2026, 3, 10, 0, 0, 0, DateTimeKind.Utc), 34)
+        ];
+    }
+
+    private static IEnumerable<ShortageAreaDesignation> GetShortageAreaSeeds(IReadOnlyDictionary<string, Region> regions)
+    {
+        return
+        [
+            new ShortageAreaDesignation
+            {
+                ExternalSourceId = "sample-hpsa-travis-primary",
+                RegionId = regions["Travis County"].Id,
+                AreaName = "Travis County primary care service area",
+                Discipline = "Primary Care",
+                DesignationType = "Geographic area",
+                Status = "Designated",
+                HpsaScore = 14,
+                PopulationToProviderRatio = 3550.2m,
+                SourceUpdatedAt = new DateTime(2026, 3, 11, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new ShortageAreaDesignation
+            {
+                ExternalSourceId = "sample-hpsa-philadelphia-mental",
+                RegionId = regions["Philadelphia County"].Id,
+                AreaName = "Philadelphia County mental health service area",
+                Discipline = "Mental Health",
+                DesignationType = "Geographic area",
+                Status = "Designated",
+                HpsaScore = 17,
+                PopulationToProviderRatio = 4280.4m,
+                SourceUpdatedAt = new DateTime(2026, 3, 29, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new ShortageAreaDesignation
+            {
+                ExternalSourceId = "sample-hpsa-hawaii-dental",
+                RegionId = regions["Hawaii County"].Id,
+                AreaName = "Hawaii County dental care service area",
+                Discipline = "Dental Health",
+                DesignationType = "Geographic area",
+                Status = "Designated",
+                HpsaScore = 18,
+                PopulationToProviderRatio = 5122.7m,
+                SourceUpdatedAt = new DateTime(2026, 3, 17, 0, 0, 0, DateTimeKind.Utc)
+            }
+        ];
+    }
+
+    private static IEnumerable<WaterSystem> GetWaterSystemSeeds()
+    {
+        return
+        [
+            new WaterSystem
+            {
+                ExternalSourceId = "sample-water-system-travis",
+                Name = "Central Travis Water Authority",
+                SystemType = "Community water system",
+                Address = "4100 Main St",
+                City = "Austin",
+                State = "TX",
+                PostalCode = "78701",
+                CountyServed = "Travis County",
+                PopulationServed = 182000
+            },
+            new WaterSystem
+            {
+                ExternalSourceId = "sample-water-system-philadelphia",
+                Name = "Philadelphia River Supply",
+                SystemType = "Community water system",
+                Address = "1200 River Ave",
+                City = "Philadelphia",
+                State = "PA",
+                PostalCode = "19107",
+                CountyServed = "Philadelphia County",
+                PopulationServed = 346000
+            }
+        ];
+    }
+
+    private static IEnumerable<WaterSystemViolation> GetWaterViolationSeeds(
+        IReadOnlyDictionary<string, Region> regions,
+        IReadOnlyDictionary<string, WaterSystem> systems)
+    {
+        return
+        [
+            new WaterSystemViolation
+            {
+                ExternalSourceId = "sample-water-violation-travis",
+                WaterSystemId = systems["sample-water-system-travis"].Id,
+                RegionId = regions["Travis County"].Id,
+                ViolationCategory = "Monitoring and reporting",
+                RuleName = "Lead and Copper Rule",
+                ContaminantName = "Lead",
+                Summary = "Open monitoring and reporting violation under the Lead and Copper Rule for a community water system serving central Travis County.",
+                IsOpen = true,
+                IdentifiedAt = new DateTime(2026, 2, 18, 0, 0, 0, DateTimeKind.Utc),
+                SourceUpdatedAt = new DateTime(2026, 3, 21, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new WaterSystemViolation
+            {
+                ExternalSourceId = "sample-water-violation-philadelphia",
+                WaterSystemId = systems["sample-water-system-philadelphia"].Id,
+                RegionId = regions["Philadelphia County"].Id,
+                ViolationCategory = "Maximum contaminant level",
+                RuleName = "Total Trihalomethanes Rule",
+                ContaminantName = "Total trihalomethanes",
+                Summary = "Open maximum contaminant level violation for total trihalomethanes in a public water system serving Philadelphia County.",
+                IsOpen = true,
+                IdentifiedAt = new DateTime(2026, 1, 23, 0, 0, 0, DateTimeKind.Utc),
+                SourceUpdatedAt = new DateTime(2026, 3, 28, 0, 0, 0, DateTimeKind.Utc)
+            }
         ];
     }
 

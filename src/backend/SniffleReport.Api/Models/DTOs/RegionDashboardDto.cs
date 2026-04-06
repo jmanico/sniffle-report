@@ -16,6 +16,10 @@ public sealed class RegionDashboardDto
 
     public SnapshotResourceCounts ResourceCounts { get; set; } = new();
 
+    public IReadOnlyList<SnapshotAccessSignalSummary> AccessSignals { get; set; } = [];
+
+    public IReadOnlyList<SnapshotEnvironmentalSignalSummary> EnvironmentalSignals { get; set; } = [];
+
     public IReadOnlyList<SnapshotPreventionSummary> PreventionHighlights { get; set; } = [];
 
     public IReadOnlyList<SnapshotNewsSummary> NewsHighlights { get; set; } = [];

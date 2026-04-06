@@ -157,6 +157,8 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
                 topAlerts = JsonSerializer.Deserialize<List<SnapshotAlertSummary>>(snapshot.TopAlertsJson, JsonOptions) ?? [],
                 trendHighlights = JsonSerializer.Deserialize<List<SnapshotTrendHighlight>>(snapshot.TrendHighlightsJson, JsonOptions) ?? [],
                 resourceCounts = JsonSerializer.Deserialize<SnapshotResourceCounts>(snapshot.ResourceCountsJson, JsonOptions) ?? new(),
+                accessSignals = JsonSerializer.Deserialize<List<SnapshotAccessSignalSummary>>(snapshot.AccessSignalsJson, JsonOptions) ?? [],
+                environmentalSignals = JsonSerializer.Deserialize<List<SnapshotEnvironmentalSignalSummary>>(snapshot.EnvironmentalSignalsJson, JsonOptions) ?? [],
                 nearbyResources,
                 preventionHighlights = JsonSerializer.Deserialize<List<SnapshotPreventionSummary>>(snapshot.PreventionHighlightsJson, JsonOptions) ?? [],
                 newsHighlights = JsonSerializer.Deserialize<List<SnapshotNewsSummary>>(snapshot.NewsHighlightsJson, JsonOptions) ?? []
@@ -173,19 +175,29 @@ public sealed class StaticSiteExporter(AppDbContext dbContext, ILogger<StaticSit
             .GroupBy(log => log.FeedSourceId)
             .Select(g => g.OrderByDescending(log => log.StartedAt).First())
             .ToDictionaryAsync(log => log.FeedSourceId, ct);
+        var latestIngests = await dbContext.IngestedRecords
+            .AsNoTracking()
+            .GroupBy(record => record.FeedSourceId)
+            .Select(g => new
+            {
+                FeedSourceId = g.Key,
+                LastIngestedAt = g.Max(record => record.LastIngestedAt)
+            })
+            .ToDictionaryAsync(x => x.FeedSourceId, x => (DateTime?)x.LastIngestedAt, ct);
 
         var feedStatus = feeds
         .Where(f => f.IsEnabled)
         .Select(f =>
         {
             latestSyncs.TryGetValue(f.Id, out var lastSync);
+            latestIngests.TryGetValue(f.Id, out var lastIngestedAt);
             return new
             {
                 name = f.Name,
                 type = f.Type.ToString(),
                 isEnabled = f.IsEnabled,
                 lastSyncStatus = f.LastSyncStatus.ToString(),
-                lastSyncCompletedAt = f.LastSyncCompletedAt,
+                lastSyncCompletedAt = f.LastSyncCompletedAt ?? lastIngestedAt ?? lastSync?.CompletedAt ?? lastSync?.StartedAt,
                 lastRecordsCreated = lastSync?.RecordsCreated,
                 lastRecordsFetched = lastSync?.RecordsFetched
             };

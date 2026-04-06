@@ -145,8 +145,7 @@ public sealed class IngestionService(
                 FeedSourceId = source.Id,
                 ExternalSourceId = record.ExternalSourceId,
                 PayloadHash = payloadHash,
-                TargetEntityType = record.RecordType == NormalizedRecordType.TrendDataPoint
-                    ? nameof(DiseaseTrend) : nameof(NewsItem),
+                TargetEntityType = GetTargetEntityTypeName(record.RecordType),
                 TargetEntityId = Guid.Empty
             });
             syncLog.RecordsSkippedUnmappable++;
@@ -190,6 +189,12 @@ public sealed class IngestionService(
 
             case NormalizedRecordType.LocalResourceEntry:
                 return await CreateLocalResourceFromRecordAsync(record, regionId, source, ct);
+
+            case NormalizedRecordType.ShortageAreaDesignation:
+                return CreateShortageAreaDesignationFromRecord(record, regionId, source);
+
+            case NormalizedRecordType.DrinkingWaterViolation:
+                return await CreateDrinkingWaterViolationFromRecordAsync(record, regionId, source, ct);
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(record), $"Unknown record type: {record.RecordType}");
@@ -324,6 +329,105 @@ public sealed class IngestionService(
         return (nameof(LocalResource), resource.Id);
     }
 
+    private (string, Guid) CreateShortageAreaDesignationFromRecord(
+        NormalizedFeedRecord record,
+        Guid regionId,
+        FeedSource source)
+    {
+        var designation = new ShortageAreaDesignation
+        {
+            RegionId = regionId,
+            ExternalSourceId = record.ExternalSourceId,
+            AreaName = record.AreaName?.Trim() ?? record.JurisdictionName?.Trim() ?? "Unknown shortage area",
+            Discipline = record.Discipline?.Trim() ?? "Primary care",
+            DesignationType = record.DesignationType?.Trim() ?? "Geographic area",
+            Status = record.DesignationStatus?.Trim() ?? "Designated",
+            PopulationGroup = record.PopulationGroup?.Trim(),
+            HpsaScore = record.HpsaScore,
+            PopulationToProviderRatio = record.PopulationToProviderRatio,
+            SourceUpdatedAt = record.SourceDate
+        };
+        dbContext.ShortageAreaDesignations.Add(designation);
+
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            _options.SystemUserId,
+            AuditLogAction.FeedIngest,
+            nameof(ShortageAreaDesignation),
+            designation.Id,
+            null,
+            new { designation.RegionId, designation.AreaName, designation.Discipline, FeedSource = source.Name },
+            $"Ingested from {source.Name}"));
+
+        return (nameof(ShortageAreaDesignation), designation.Id);
+    }
+
+    private async Task<(string, Guid)> CreateDrinkingWaterViolationFromRecordAsync(
+        NormalizedFeedRecord record,
+        Guid regionId,
+        FeedSource source,
+        CancellationToken ct)
+    {
+        var waterSystemExternalId = record.ParentExternalSourceId?.Trim();
+        var waterSystem = waterSystemExternalId is null
+            ? null
+            : await dbContext.WaterSystems.FirstOrDefaultAsync(s => s.ExternalSourceId == waterSystemExternalId, ct);
+
+        if (waterSystem is null)
+        {
+            waterSystem = new WaterSystem
+            {
+                ExternalSourceId = waterSystemExternalId ?? record.ExternalSourceId,
+                Name = record.WaterSystemName?.Trim() ?? "Unknown water system",
+                SystemType = record.WaterSystemType?.Trim(),
+                Address = record.WaterSystemAddress?.Trim(),
+                City = record.WaterSystemCity?.Trim(),
+                State = record.WaterSystemState?.Trim(),
+                PostalCode = record.WaterSystemPostalCode?.Trim(),
+                CountyServed = record.CountyServed?.Trim(),
+                PopulationServed = record.PopulationServed
+            };
+            dbContext.WaterSystems.Add(waterSystem);
+        }
+        else
+        {
+            waterSystem.Name = record.WaterSystemName?.Trim() ?? waterSystem.Name;
+            waterSystem.SystemType = record.WaterSystemType?.Trim() ?? waterSystem.SystemType;
+            waterSystem.Address = record.WaterSystemAddress?.Trim() ?? waterSystem.Address;
+            waterSystem.City = record.WaterSystemCity?.Trim() ?? waterSystem.City;
+            waterSystem.State = record.WaterSystemState?.Trim() ?? waterSystem.State;
+            waterSystem.PostalCode = record.WaterSystemPostalCode?.Trim() ?? waterSystem.PostalCode;
+            waterSystem.CountyServed = record.CountyServed?.Trim() ?? waterSystem.CountyServed;
+            waterSystem.PopulationServed = record.PopulationServed ?? waterSystem.PopulationServed;
+        }
+
+        var violation = new WaterSystemViolation
+        {
+            WaterSystem = waterSystem,
+            RegionId = regionId,
+            ExternalSourceId = record.ExternalSourceId,
+            ViolationCategory = record.ViolationCategory?.Trim() ?? "Drinking water violation",
+            RuleName = record.RuleName?.Trim() ?? "EPA SDWIS rule",
+            ContaminantName = record.ContaminantName?.Trim(),
+            Summary = record.Summary?.Trim() ?? "EPA drinking water violation.",
+            IsOpen = record.IsOpenViolation ?? true,
+            IdentifiedAt = record.IdentifiedAt,
+            ResolvedAt = record.ResolvedAt,
+            SourceUpdatedAt = record.SourceDate
+        };
+        dbContext.WaterSystemViolations.Add(violation);
+
+        dbContext.AuditLogEntries.Add(AdminAuditLog.Create(
+            _options.SystemUserId,
+            AuditLogAction.FeedIngest,
+            nameof(WaterSystemViolation),
+            violation.Id,
+            null,
+            new { violation.RegionId, violation.ViolationCategory, violation.RuleName, FeedSource = source.Name },
+            $"Ingested from {source.Name}"));
+
+        return (nameof(WaterSystemViolation), violation.Id);
+    }
+
     private async Task<HealthAlert> FindOrCreateAlertAsync(
         Guid regionId,
         string disease,
@@ -414,7 +518,79 @@ public sealed class IngestionService(
                     news.Content = record.Summary?.Trim() ?? news.Content;
                 }
                 break;
+
+            case nameof(LocalResource):
+                var resource = await dbContext.LocalResources
+                    .FirstOrDefaultAsync(r => r.Id == ingestedRecord.TargetEntityId, ct);
+                if (resource is not null)
+                {
+                    resource.Address = record.Address?.Trim() ?? resource.Address;
+                    resource.Phone = record.Phone ?? resource.Phone;
+                    resource.Website = record.Website ?? resource.Website;
+                    resource.Latitude = record.Latitude ?? resource.Latitude;
+                    resource.Longitude = record.Longitude ?? resource.Longitude;
+                    if (record.ResourceType.HasValue)
+                    {
+                        resource.Type = record.ResourceType.Value;
+                    }
+                }
+                break;
+
+            case nameof(ShortageAreaDesignation):
+                var designation = await dbContext.ShortageAreaDesignations
+                    .FirstOrDefaultAsync(d => d.Id == ingestedRecord.TargetEntityId, ct);
+                if (designation is not null)
+                {
+                    designation.AreaName = record.AreaName?.Trim() ?? designation.AreaName;
+                    designation.Discipline = record.Discipline?.Trim() ?? designation.Discipline;
+                    designation.DesignationType = record.DesignationType?.Trim() ?? designation.DesignationType;
+                    designation.Status = record.DesignationStatus?.Trim() ?? designation.Status;
+                    designation.PopulationGroup = record.PopulationGroup?.Trim() ?? designation.PopulationGroup;
+                    designation.HpsaScore = record.HpsaScore ?? designation.HpsaScore;
+                    designation.PopulationToProviderRatio = record.PopulationToProviderRatio ?? designation.PopulationToProviderRatio;
+                    designation.SourceUpdatedAt = record.SourceDate ?? designation.SourceUpdatedAt;
+                }
+                break;
+
+            case nameof(WaterSystemViolation):
+                var violation = await dbContext.WaterSystemViolations
+                    .Include(v => v.WaterSystem)
+                    .FirstOrDefaultAsync(v => v.Id == ingestedRecord.TargetEntityId, ct);
+                if (violation is not null)
+                {
+                    violation.ViolationCategory = record.ViolationCategory?.Trim() ?? violation.ViolationCategory;
+                    violation.RuleName = record.RuleName?.Trim() ?? violation.RuleName;
+                    violation.ContaminantName = record.ContaminantName?.Trim() ?? violation.ContaminantName;
+                    violation.Summary = record.Summary?.Trim() ?? violation.Summary;
+                    violation.IsOpen = record.IsOpenViolation ?? violation.IsOpen;
+                    violation.IdentifiedAt = record.IdentifiedAt ?? violation.IdentifiedAt;
+                    violation.ResolvedAt = record.ResolvedAt ?? violation.ResolvedAt;
+                    violation.SourceUpdatedAt = record.SourceDate ?? violation.SourceUpdatedAt;
+
+                    violation.WaterSystem.Name = record.WaterSystemName?.Trim() ?? violation.WaterSystem.Name;
+                    violation.WaterSystem.SystemType = record.WaterSystemType?.Trim() ?? violation.WaterSystem.SystemType;
+                    violation.WaterSystem.Address = record.WaterSystemAddress?.Trim() ?? violation.WaterSystem.Address;
+                    violation.WaterSystem.City = record.WaterSystemCity?.Trim() ?? violation.WaterSystem.City;
+                    violation.WaterSystem.State = record.WaterSystemState?.Trim() ?? violation.WaterSystem.State;
+                    violation.WaterSystem.PostalCode = record.WaterSystemPostalCode?.Trim() ?? violation.WaterSystem.PostalCode;
+                    violation.WaterSystem.CountyServed = record.CountyServed?.Trim() ?? violation.WaterSystem.CountyServed;
+                    violation.WaterSystem.PopulationServed = record.PopulationServed ?? violation.WaterSystem.PopulationServed;
+                }
+                break;
         }
+    }
+
+    private static string GetTargetEntityTypeName(NormalizedRecordType recordType)
+    {
+        return recordType switch
+        {
+            NormalizedRecordType.TrendDataPoint => nameof(DiseaseTrend),
+            NormalizedRecordType.NewsArticle => nameof(NewsItem),
+            NormalizedRecordType.LocalResourceEntry => nameof(LocalResource),
+            NormalizedRecordType.ShortageAreaDesignation => nameof(ShortageAreaDesignation),
+            NormalizedRecordType.DrinkingWaterViolation => nameof(WaterSystemViolation),
+            _ => nameof(NewsItem)
+        };
     }
 
     private static string ComputeHash(string payload)

@@ -33,6 +33,8 @@ public sealed class RegionSnapshotBuilder(
         var newsByRegion = await LoadNewsByRegionAsync(ct);
         var preventionByRegion = await LoadPreventionByRegionAsync(ct);
         var resourcesByRegion = await LoadResourcesByRegionAsync(ct);
+        var shortageAreasByRegion = await LoadShortageAreasByRegionAsync(ct);
+        var waterSignalsByRegion = await LoadWaterSignalsByRegionAsync(ct);
 
         // Step 3: Load existing snapshots for upsert
         var existingSnapshots = await dbContext.RegionSnapshots
@@ -47,7 +49,7 @@ public sealed class RegionSnapshotBuilder(
             var snapshot = BuildSnapshotForRegion(
                 regionId, descendantIds, now, config,
                 alertsByRegion, trendsByAlert, newsByRegion,
-                preventionByRegion, resourcesByRegion);
+                preventionByRegion, resourcesByRegion, shortageAreasByRegion, waterSignalsByRegion);
 
             if (existingSnapshots.TryGetValue(regionId, out var existing))
             {
@@ -56,6 +58,8 @@ public sealed class RegionSnapshotBuilder(
                 existing.TopAlertsJson = snapshot.TopAlertsJson;
                 existing.TrendHighlightsJson = snapshot.TrendHighlightsJson;
                 existing.ResourceCountsJson = snapshot.ResourceCountsJson;
+                existing.AccessSignalsJson = snapshot.AccessSignalsJson;
+                existing.EnvironmentalSignalsJson = snapshot.EnvironmentalSignalsJson;
                 existing.PreventionHighlightsJson = snapshot.PreventionHighlightsJson;
                 existing.NewsHighlightsJson = snapshot.NewsHighlightsJson;
             }
@@ -92,18 +96,27 @@ public sealed class RegionSnapshotBuilder(
         Dictionary<Guid, List<TrendData>> trendsByAlert,
         Dictionary<Guid, List<NewsData>> newsByRegion,
         Dictionary<Guid, List<PreventionData>> preventionByRegion,
-        Dictionary<Guid, List<ResourceData>> resourcesByRegion)
+        Dictionary<Guid, List<ResourceData>> resourcesByRegion,
+        Dictionary<Guid, List<ShortageAreaData>> shortageAreasByRegion,
+        Dictionary<Guid, List<WaterSignalData>> waterSignalsByRegion)
     {
         // Collect alerts from all descendant regions
         var alerts = CollectFromDescendants(alertsByRegion, descendantIds);
         var news = CollectFromDescendants(newsByRegion, descendantIds);
         var prevention = CollectFromDescendants(preventionByRegion, descendantIds);
         var resources = CollectFromDescendants(resourcesByRegion, descendantIds);
+        var shortageAreas = CollectFromDescendants(shortageAreasByRegion, descendantIds);
+        var waterSignals = CollectFromDescendants(waterSignalsByRegion, descendantIds);
 
-        // Top alerts: exclude community health indicators (PLACES data) — those are
-        // population stats, not disease outbreak alerts. Sort by severity then date.
-        var topAlerts = alerts
+        // Top alerts: prefer non-community-health alerts, but fall back to community
+        // health indicators when that is all the region has so county pages do not
+        // show "published alerts" with an empty alert list.
+        var preferredAlerts = alerts
             .Where(a => !a.Disease.StartsWith("[Community Health]", StringComparison.Ordinal))
+            .ToList();
+        var alertPool = preferredAlerts.Count > 0 ? preferredAlerts : alerts;
+
+        var topAlerts = alertPool
             .OrderByDescending(a => a.Severity)
             .ThenByDescending(a => a.SourceDate)
             .Take(config.TopAlertsCount)
@@ -152,6 +165,48 @@ public sealed class RegionSnapshotBuilder(
             Total = resources.Count
         };
 
+        var accessSignals = shortageAreas
+            .GroupBy(s => s.ExternalSourceId)
+            .Select(g => g.OrderByDescending(x => x.SourceUpdatedAt).First())
+            .OrderByDescending(s => s.HpsaScore ?? 0)
+            .ThenBy(s => s.Discipline)
+            .Take(4)
+            .Select(s => new SnapshotAccessSignalSummary
+            {
+                DesignationId = s.DesignationId,
+                AreaName = s.AreaName,
+                Discipline = s.Discipline,
+                DesignationType = s.DesignationType,
+                Status = s.Status,
+                PopulationGroup = s.PopulationGroup,
+                HpsaScore = s.HpsaScore,
+                PopulationToProviderRatio = s.PopulationToProviderRatio,
+                SourceUpdatedAt = s.SourceUpdatedAt
+            })
+            .ToList();
+
+        var environmentalSignals = waterSignals
+            .Where(s => s.IsOpen)
+            .GroupBy(s => s.ExternalSourceId)
+            .Select(g => g.OrderByDescending(x => x.SourceUpdatedAt ?? x.IdentifiedAt).First())
+            .OrderByDescending(s => s.PopulationServed ?? 0)
+            .ThenByDescending(s => s.IdentifiedAt)
+            .Take(4)
+            .Select(s => new SnapshotEnvironmentalSignalSummary
+            {
+                ViolationId = s.ViolationId,
+                WaterSystemName = s.WaterSystemName,
+                ViolationCategory = s.ViolationCategory,
+                RuleName = s.RuleName,
+                ContaminantName = s.ContaminantName,
+                Summary = s.Summary,
+                IsOpen = s.IsOpen,
+                PopulationServed = s.PopulationServed,
+                IdentifiedAt = s.IdentifiedAt,
+                SourceUpdatedAt = s.SourceUpdatedAt
+            })
+            .ToList();
+
         // Prevention highlights: most recently created
         var preventionHighlights = prevention
             .OrderByDescending(p => p.CreatedAt)
@@ -186,6 +241,8 @@ public sealed class RegionSnapshotBuilder(
             TopAlertsJson = JsonSerializer.Serialize(topAlerts, JsonOptions),
             TrendHighlightsJson = JsonSerializer.Serialize(trendHighlights, JsonOptions),
             ResourceCountsJson = JsonSerializer.Serialize(resourceCounts, JsonOptions),
+            AccessSignalsJson = JsonSerializer.Serialize(accessSignals, JsonOptions),
+            EnvironmentalSignalsJson = JsonSerializer.Serialize(environmentalSignals, JsonOptions),
             PreventionHighlightsJson = JsonSerializer.Serialize(preventionHighlights, JsonOptions),
             NewsHighlightsJson = JsonSerializer.Serialize(newsHighlights, JsonOptions)
         };
@@ -344,6 +401,56 @@ public sealed class RegionSnapshotBuilder(
             .ToDictionary(g => g.Key, g => g.ToList());
     }
 
+    private async Task<Dictionary<Guid, List<ShortageAreaData>>> LoadShortageAreasByRegionAsync(CancellationToken ct)
+    {
+        var designations = await dbContext.ShortageAreaDesignations
+            .AsNoTracking()
+            .Select(d => new ShortageAreaData
+            {
+                DesignationId = d.Id,
+                RegionId = d.RegionId,
+                ExternalSourceId = d.ExternalSourceId,
+                AreaName = d.AreaName,
+                Discipline = d.Discipline,
+                DesignationType = d.DesignationType,
+                Status = d.Status,
+                PopulationGroup = d.PopulationGroup,
+                HpsaScore = d.HpsaScore,
+                PopulationToProviderRatio = d.PopulationToProviderRatio,
+                SourceUpdatedAt = d.SourceUpdatedAt
+            })
+            .ToListAsync(ct);
+
+        return designations.GroupBy(d => d.RegionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+    }
+
+    private async Task<Dictionary<Guid, List<WaterSignalData>>> LoadWaterSignalsByRegionAsync(CancellationToken ct)
+    {
+        var violations = await dbContext.WaterSystemViolations
+            .AsNoTracking()
+            .Include(v => v.WaterSystem)
+            .Select(v => new WaterSignalData
+            {
+                ViolationId = v.Id,
+                RegionId = v.RegionId,
+                ExternalSourceId = v.ExternalSourceId,
+                WaterSystemName = v.WaterSystem.Name,
+                ViolationCategory = v.ViolationCategory,
+                RuleName = v.RuleName,
+                ContaminantName = v.ContaminantName,
+                Summary = v.Summary,
+                IsOpen = v.IsOpen,
+                PopulationServed = v.WaterSystem.PopulationServed,
+                IdentifiedAt = v.IdentifiedAt,
+                SourceUpdatedAt = v.SourceUpdatedAt
+            })
+            .ToListAsync(ct);
+
+        return violations.GroupBy(v => v.RegionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+    }
+
     private sealed class AlertData
     {
         public Guid AlertId { get; init; }
@@ -387,5 +494,36 @@ public sealed class RegionSnapshotBuilder(
     {
         public Guid RegionId { get; init; }
         public ResourceType Type { get; init; }
+    }
+
+    private sealed class ShortageAreaData
+    {
+        public Guid DesignationId { get; init; }
+        public Guid RegionId { get; init; }
+        public string ExternalSourceId { get; init; } = string.Empty;
+        public string AreaName { get; init; } = string.Empty;
+        public string Discipline { get; init; } = string.Empty;
+        public string DesignationType { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public string? PopulationGroup { get; init; }
+        public int? HpsaScore { get; init; }
+        public decimal? PopulationToProviderRatio { get; init; }
+        public DateTime? SourceUpdatedAt { get; init; }
+    }
+
+    private sealed class WaterSignalData
+    {
+        public Guid ViolationId { get; init; }
+        public Guid RegionId { get; init; }
+        public string ExternalSourceId { get; init; } = string.Empty;
+        public string WaterSystemName { get; init; } = string.Empty;
+        public string ViolationCategory { get; init; } = string.Empty;
+        public string RuleName { get; init; } = string.Empty;
+        public string? ContaminantName { get; init; }
+        public string Summary { get; init; } = string.Empty;
+        public bool IsOpen { get; init; }
+        public int? PopulationServed { get; init; }
+        public DateTime? IdentifiedAt { get; init; }
+        public DateTime? SourceUpdatedAt { get; init; }
     }
 }

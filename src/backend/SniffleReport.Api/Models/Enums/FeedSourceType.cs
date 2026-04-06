@@ -7,5 +7,7 @@ public enum FeedSourceType
     StateHealthDepartment = 2,
     NpiRegistry = 3,
     HrsaHealthCenter = 4,
-    OpenFda = 5
+    OpenFda = 5,
+    HrsaHpsa = 6,
+    EpaSdwis = 7
 }

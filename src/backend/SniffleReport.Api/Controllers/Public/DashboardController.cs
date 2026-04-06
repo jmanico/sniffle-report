@@ -47,6 +47,8 @@ public sealed class DashboardController(
             TopAlerts = JsonSerializer.Deserialize<List<SnapshotAlertSummary>>(snapshot.TopAlertsJson, JsonOptions) ?? [],
             TrendHighlights = JsonSerializer.Deserialize<List<SnapshotTrendHighlight>>(snapshot.TrendHighlightsJson, JsonOptions) ?? [],
             ResourceCounts = JsonSerializer.Deserialize<SnapshotResourceCounts>(snapshot.ResourceCountsJson, JsonOptions) ?? new(),
+            AccessSignals = JsonSerializer.Deserialize<List<SnapshotAccessSignalSummary>>(snapshot.AccessSignalsJson, JsonOptions) ?? [],
+            EnvironmentalSignals = JsonSerializer.Deserialize<List<SnapshotEnvironmentalSignalSummary>>(snapshot.EnvironmentalSignalsJson, JsonOptions) ?? [],
             PreventionHighlights = JsonSerializer.Deserialize<List<SnapshotPreventionSummary>>(snapshot.PreventionHighlightsJson, JsonOptions) ?? [],
             NewsHighlights = JsonSerializer.Deserialize<List<SnapshotNewsSummary>>(snapshot.NewsHighlightsJson, JsonOptions) ?? []
         };

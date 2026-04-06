@@ -22,8 +22,8 @@ export function HomePage() {
           <h1>Community health data for every US county</h1>
           <p>
             Regional health trends, disease surveillance, local clinics and pharmacies,
-            prevention guidance, and drug safety alerts — sourced from CDC, FDA, and CMS.
-            Updated automatically from 12 public data feeds.
+            prevention guidance, and drug safety alerts sourced from the CDC, FDA, and CMS.
+            The site updates automatically from 12 public data feeds.
           </p>
           <div className="page-badges">
             <span className="page-badge">50 states + DC</span>

@@ -6,6 +6,8 @@ import {
   snapshotAlertSummarySchema,
   snapshotTrendHighlightSchema,
   snapshotResourceCountsSchema,
+  snapshotAccessSignalSummarySchema,
+  snapshotEnvironmentalSignalSummarySchema,
   snapshotPreventionSummarySchema,
   snapshotNewsSummarySchema,
   resourceTypeSchema,
@@ -70,6 +72,8 @@ const staticDashboardSchema = z.object({
   topAlerts: z.array(snapshotAlertSummarySchema),
   trendHighlights: z.array(snapshotTrendHighlightSchema),
   resourceCounts: snapshotResourceCountsSchema,
+  accessSignals: z.array(snapshotAccessSignalSummarySchema),
+  environmentalSignals: z.array(snapshotEnvironmentalSignalSummarySchema),
   nearbyResources: z.array(
     z.object({
       id: z.string().uuid(),
